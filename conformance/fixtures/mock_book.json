@@ -1,0 +1,17 @@
+{
+  "tabs": {
+    "Vehicles": {
+      "headers": ["Sync ID", "Name", "Updated At"],
+      "rows": [
+        ["v-1", "Car A", "1000"],
+        ["v-2", "Car B", "2000"]
+      ]
+    },
+    "Fuel - Unassigned": {
+      "headers": ["Sync ID", "Cost", "Gallons", "Odometer", "Partial Fill"],
+      "rows": [
+        ["f-1", "10.00", "2.5", "0", "false"]
+      ]
+    }
+  }
+}

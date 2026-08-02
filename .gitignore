@@ -12,3 +12,10 @@ third_party/*/src/
 third_party/*/status.local
 third_party/*/*.local
 # --- end third_party consumer ---
+
+# Android AAR build / python
+android/.gradle/
+android/**/build/
+**/__pycache__/
+*.pyc
+.write_ok

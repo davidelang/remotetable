@@ -17,3 +17,22 @@ Append-only activity log for this subproject.
 - Host: ~/git/remotetable — GitHub davidelang/remotetable
 - Formal plans under dev-ai-interaction/plans/*-20260802-0348-plan.md
 - Continue email/tabular work via library host + VE pin bumps only
+
+## 2026-08-02 - M1 product: mock conformance + live backends + AAR
+
+- Python RemoteTable, MockBackend, google-sheets/excel-graph/ethercalc HTTP clients
+- conformance harness PASS; android AAR build (Kotlin API)
+- Branch email-connection
+
+
+## 2026-08-02 - M1 product commit (after object perms fix)
+
+- Python RemoteTable + MockBackend + live google-sheets/excel-graph/ethercalc
+- conformance PASS; Android AAR recipe; branch email-connection
+
+
+## 2026-08-02 - M1 product commit after object perms fix
+
+- Python RemoteTable + MockBackend + live google-sheets/excel-graph/ethercalc
+- conformance PASS; Android AAR recipe; branch email-connection
+
