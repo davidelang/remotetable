@@ -6,7 +6,8 @@ Not VehicleExpenses-specific. VehicleExpenses will become a consumer after the l
 
 ## Status
 
-Pre-repo staging under VehicleExpenses sandbox. Awaiting GitHub URL under the owner’s user account.
+**SoT:** `~/git/remotetable` + `git@github.com:davidelang/remotetable.git`.  
+**VE pin:** `third_party/remotetable/`. This sandbox copy is seed only.
 
 | Milestone | Scope |
 |-----------|--------|

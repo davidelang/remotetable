@@ -10,3 +10,10 @@ Append-only activity log for this subproject.
 - M1: library for VE (Sheets + excel-graph + EtherCalc + conformance); CLI later
 - Awaiting GitHub repo URL under owner user; formal VE plans deferred until then
 - Dual eng-log: also note high-level milestones in VehicleExpenses `ENGINEERING_LOG.md` until work splits to dedicated agents
+
+## 2026-08-02 — third_party live; plans retargeted
+
+- VE branch has third_party/remotetable with lock.yaml (sha TBD until first pin)
+- Host: ~/git/remotetable — GitHub davidelang/remotetable
+- Formal plans under dev-ai-interaction/plans/*-20260802-0348-plan.md
+- Continue email/tabular work via library host + VE pin bumps only
