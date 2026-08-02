@@ -1,9 +1,9 @@
 # AGENT_CONTEXT.md — remotetable
 
-- **Agent ID:** master
+- **Agent ID:** master-worktree
 - **Current Branch:** master
 - **Role:** Coder/Planner (product)
-- **Sandbox:** `/home/dlang/git/remotetable/sandbox/`
+- **Sandbox:** `/home/dlang/git/remotetable/master/sandbox/`
 - **Status:** ACTIVE
 
 ## Instructions
