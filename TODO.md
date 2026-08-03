@@ -24,3 +24,7 @@ Backlog only. Phase 1 (library for VehicleExpenses cutover of first three backen
 - [ ] VE: rename wire/UI backend id `excel` → **`excel-graph`** (capability unchanged)
 - [ ] VE: replace internal tabular API calls with remotetable for the first three backends
 - [ ] VE: leave “Other” / remaining backends on in-tree code until ported
+
+# Future work
+
+M2 deferred: packaging/trainer/full format matrix / remaining backends
