@@ -19,6 +19,7 @@ from . import (
     GoogleSheetsBackend,
     MockBackend,
     RemoteTable,
+    RowDbBackend,
 )
 
 COMMANDS = ("test-connection", "list-tabs", "read-rows", "write-rows")
@@ -94,6 +95,10 @@ def build_backend(args: argparse.Namespace):
         if args.fixture:
             book = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
         return MockBackend(book)
+    if bid in BackendIds.ROW_DB:
+        if not args.token_file:
+            raise SystemExit("--token-file required for row-db backends (JSON with token + tables)")
+        return RowDbBackend(bid, "", "", {}, token_file=args.token_file)
     if not args.token_file and bid != BackendIds.ETHERCALC:
         if not (args.base_url and args.room):
             raise SystemExit("--token-file required for live backends (or ethercalc --base-url/--room)")
@@ -107,6 +112,8 @@ def build_backend(args: argparse.Namespace):
             room=args.room,
             token_file=args.token_file,
         )
+    if bid in (BackendIds.ONLYOFFICE, BackendIds.COLLABORA):
+        raise SystemExit(f"backend {bid} not implemented yet (planned before rclone)")
     raise SystemExit(f"unknown backend: {bid}")
 
 

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Go host CLI wrapper: scripts/remotetable-go …
+set -euo pipefail
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+# Resolve relative --fixture paths against caller cwd before go run cds.
+args=()
+prev=""
+for a in "$@"; do
+  if [[ "$prev" == "--fixture" && "$a" != /* ]]; then
+    args+=("$(pwd)/$a")
+  elif [[ "$a" == --fixture=* ]]; then
+    p="${a#--fixture=}"
+    if [[ "$p" != /* ]]; then
+      args+=("--fixture=$(pwd)/$p")
+    else
+      args+=("$a")
+    fi
+  else
+    args+=("$a")
+  fi
+  prev="$a"
+done
+cd "$ROOT/go"
+exec go run ./cmd/remotetable "${args[@]}"

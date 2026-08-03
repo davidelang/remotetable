@@ -1,5 +1,7 @@
 package remotetable
 
+import "sort"
+
 // MockBackend in-memory multi-tab store for conformance.
 type MockBackend struct {
 	Tabs map[string]*Tab
@@ -10,6 +12,12 @@ type Tab struct {
 	Rows    [][]string
 }
 
+func NewMockBackend() *MockBackend {
+	return &MockBackend{Tabs: map[string]*Tab{}}
+}
+
+func (m *MockBackend) BackendID() string { return BackendMock }
+
 func (m *MockBackend) TestConnection() (bool, string) {
 	return true, "mock"
 }
@@ -19,6 +27,7 @@ func (m *MockBackend) ListTabs() []string {
 	for k := range m.Tabs {
 		out = append(out, k)
 	}
+	sort.Strings(out)
 	return out
 }
 
@@ -54,16 +63,29 @@ func (m *MockBackend) ReadRows(tab string) ([]string, [][]string) {
 	if !ok {
 		return nil, nil
 	}
-	return t.Headers, t.Rows
+	// defensive copies
+	h := append([]string{}, t.Headers...)
+	rows := make([][]string, len(t.Rows))
+	for i, r := range t.Rows {
+		rows[i] = append([]string{}, r...)
+	}
+	return h, rows
 }
 
 func (m *MockBackend) WriteRows(tab string, headers []string, rows [][]string, mode string) int {
 	m.EnsureHeaders(tab, headers)
 	t := m.Tabs[tab]
-	if mode == "replace" {
-		t.Rows = rows
-		return len(rows)
+	// pad rows to header width
+	padded := make([][]string, len(rows))
+	for i, r := range rows {
+		nr := make([]string, len(t.Headers))
+		copy(nr, r)
+		padded[i] = nr
 	}
-	t.Rows = append(t.Rows, rows...)
-	return len(rows)
+	if mode == "replace" {
+		t.Rows = padded
+		return len(padded)
+	}
+	t.Rows = append(t.Rows, padded...)
+	return len(padded)
 }

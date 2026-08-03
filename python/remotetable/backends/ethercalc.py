@@ -101,6 +101,9 @@ class EtherCalcBackend(Backend):
         text = self._get(".csv")
         reader = csv.reader(io.StringIO(text))
         rows = [list(r) for r in reader]
+        # EtherCalc sometimes prefixes a blank/comma-only line before headers.
+        while rows and all(not str(c).strip() for c in rows[0]):
+            rows = rows[1:]
         if not rows:
             return {"headers": [], "rows": []}
         headers = [str(c) for c in rows[0]]

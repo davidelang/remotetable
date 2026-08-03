@@ -1,5 +1,7 @@
 package com.davidelang.remotetable
 
+import org.json.JSONObject
+
 /**
  * Provider-neutral remote table facade (M2).
  * Live backends use HttpURLConnection + JSON token/config (no Google/MS client libs).
@@ -56,7 +58,15 @@ object BackendIds {
     const val GOOGLE_SHEETS = "google-sheets"
     const val EXCEL_GRAPH = "excel-graph"
     const val ETHERCALC = "ethercalc"
-    val LIVE = listOf(GOOGLE_SHEETS, EXCEL_GRAPH, ETHERCALC)
+    const val BASEROW = "baserow"
+    const val NOCODB = "nocodb"
+    const val POCKETBASE = "pocketbase"
+    const val SUPABASE = "supabase"
+    const val AIRTABLE = "airtable"
+    const val ONLYOFFICE = "onlyoffice"
+    const val COLLABORA = "collabora"
+    val ROW_DB = listOf(BASEROW, NOCODB, POCKETBASE, SUPABASE, AIRTABLE)
+    val LIVE = listOf(GOOGLE_SHEETS, EXCEL_GRAPH, ETHERCALC) + ROW_DB
 }
 
 /** Factory for backends from config maps (token strings, not only files). */
@@ -71,6 +81,29 @@ object Backends {
 
     fun ethercalc(baseUrl: String, room: String = "sheet", auth: String? = null): Backend =
         EtherCalcBackend(baseUrl, room, auth)
+
+    fun rowDb(
+        kind: String,
+        baseUrl: String,
+        token: String,
+        tables: Map<String, String>,
+        baseId: String = "",
+    ): Backend = RowDbBackend(kind, baseUrl, token, tables, baseId)
+
+    fun baserow(baseUrl: String, token: String, tables: Map<String, String>): Backend =
+        rowDb(BackendIds.BASEROW, baseUrl, token, tables)
+
+    fun nocodb(baseUrl: String, token: String, tables: Map<String, String>): Backend =
+        rowDb(BackendIds.NOCODB, baseUrl, token, tables)
+
+    fun pocketbase(baseUrl: String, token: String, tables: Map<String, String>): Backend =
+        rowDb(BackendIds.POCKETBASE, baseUrl, token, tables)
+
+    fun supabase(baseUrl: String, token: String, tables: Map<String, String>): Backend =
+        rowDb(BackendIds.SUPABASE, baseUrl, token, tables)
+
+    fun airtable(token: String, baseId: String, tables: Map<String, String>): Backend =
+        rowDb(BackendIds.AIRTABLE, "https://api.airtable.com", token, tables, baseId)
 
     fun fromConfig(backendId: String, config: Map<String, String>): Backend = when (backendId) {
         BackendIds.MOCK -> mock()
@@ -88,9 +121,37 @@ object Backends {
             config["room"] ?: "sheet",
             config["auth"] ?: config["access_token"],
         )
+        BackendIds.BASEROW, BackendIds.NOCODB, BackendIds.POCKETBASE, BackendIds.SUPABASE, BackendIds.AIRTABLE -> {
+            val tablesJson = config["tables_json"] ?: config["tables"] ?: "{}"
+            val tables = parseTablesMap(tablesJson)
+            rowDb(
+                backendId,
+                config["base_url"] ?: "",
+                config["access_token"] ?: config["token"] ?: "",
+                tables,
+                config["base_id"] ?: "",
+            )
+        }
         else -> throw IllegalArgumentException("unknown backend: $backendId")
     }
+
+    private fun parseTablesMap(raw: String): Map<String, String> {
+        if (raw.isBlank()) return emptyMap()
+        return try {
+            val obj = JSONObject(raw)
+            val out = mutableMapOf<String, String>()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                out[k] = obj.opt(k)?.toString().orEmpty()
+            }
+            out.filterValues { it.isNotBlank() }
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
 }
+
 
 class MockBackend(initial: Map<String, TabData> = emptyMap()) : Backend {
     override val backendId: String = BackendIds.MOCK
