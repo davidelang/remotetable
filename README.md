@@ -51,15 +51,18 @@ User-supplied **plain JSON token file**. OAuth device flow and service accounts 
 ```bash
 # offline mock
 python3 conformance/harness.py
+bash conformance/cli_flag_order_smoke.sh
+# flags before *or* after subcommand:
 scripts/remotetable --backend mock --fixture conformance/fixtures/mock_book.json test-connection
-scripts/remotetable --backend mock --fixture conformance/fixtures/mock_book.json list-tabs
-scripts/remotetable --backend mock --fixture conformance/fixtures/mock_book.json read-rows --tab Vehicles
+scripts/remotetable test-connection --backend mock --fixture conformance/fixtures/mock_book.json
+scripts/remotetable list-tabs --backend mock --fixture conformance/fixtures/mock_book.json
+scripts/remotetable read-rows --tab Vehicles --backend mock --fixture conformance/fixtures/mock_book.json
 echo '{"headers":["A","B"],"rows":[["1","2"]]}' | \
-  scripts/remotetable --backend mock write-rows --tab T --mode replace
+  scripts/remotetable write-rows --tab T --mode replace --backend mock
 
-# live (opt-in)
-scripts/remotetable --backend google-sheets --token-file /path/token.json \
-  --spreadsheet-id ID test-connection
+# live (opt-in) — see conformance/README.md
+scripts/remotetable test-connection --backend google-sheets --token-file /path/token.json \
+  --spreadsheet-id ID
 ```
 
 Also: `PYTHONPATH=python python3 -m remotetable …`

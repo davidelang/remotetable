@@ -42,3 +42,8 @@ Append-only activity log for this subproject.
 - Expanded mock harness (replace, multi-tab, pad, empty book) + opt-in live smoke
 - Host CLI scripts/remotetable + python -m remotetable
 - Android AAR: GoogleSheetsBackend, ExcelGraphBackend, EtherCalcBackend + Backends factory
+
+## 2026-08-02 - M2.5 CLI flag order + live smoke docs
+
+- normalize_argv: --backend/--fixture before or after subcommand
+- conformance/cli_flag_order_smoke.sh; conformance/README live copy-paste

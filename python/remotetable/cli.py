@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""remotetable host CLI — mock offline; live via --token-file."""
+"""remotetable host CLI — mock offline; live via --token-file.
+
+Global flags (--backend, --token-file, …) may appear before **or** after the
+subcommand.
+"""
 from __future__ import annotations
 
 import argparse
@@ -17,6 +21,71 @@ from . import (
     RemoteTable,
 )
 
+COMMANDS = ("test-connection", "list-tabs", "read-rows", "write-rows")
+# Flags that take a value (global)
+GLOBAL_VALUE_FLAGS = {
+    "--backend",
+    "--token-file",
+    "--fixture",
+    "--spreadsheet-id",
+    "--item-id",
+    "--base-url",
+    "--room",
+}
+
+
+def normalize_argv(argv: list[str]) -> list[str]:
+    """Rewrite argv so global options precede the subcommand for argparse."""
+    cmd_idx = None
+    for i, a in enumerate(argv):
+        if a in COMMANDS:
+            cmd_idx = i
+            break
+    if cmd_idx is None:
+        return argv
+
+    before = argv[:cmd_idx]
+    cmd = argv[cmd_idx]
+    after = argv[cmd_idx + 1 :]
+
+    globals_out: list[str] = []
+    other_before: list[str] = []
+    sub_args: list[str] = []
+
+    def take_global(seq: list[str], i: int, into: list[str]) -> int:
+        a = seq[i]
+        if a in GLOBAL_VALUE_FLAGS:
+            into.append(a)
+            if i + 1 < len(seq) and not seq[i + 1].startswith("-"):
+                into.append(seq[i + 1])
+                return i + 2
+            return i + 1
+        if a.startswith("--") and "=" in a and a.split("=", 1)[0] in GLOBAL_VALUE_FLAGS:
+            into.append(a)
+            return i + 1
+        return -1
+
+    i = 0
+    while i < len(before):
+        n = take_global(before, i, globals_out)
+        if n >= 0:
+            i = n
+            continue
+        other_before.append(before[i])
+        i += 1
+
+    i = 0
+    while i < len(after):
+        n = take_global(after, i, globals_out)
+        if n >= 0:
+            i = n
+            continue
+        sub_args.append(after[i])
+        i += 1
+
+    # Preserve stray pre-command tokens (help argparse surface errors)
+    return other_before + globals_out + [cmd] + sub_args
+
 
 def build_backend(args: argparse.Namespace):
     bid = args.backend
@@ -26,7 +95,6 @@ def build_backend(args: argparse.Namespace):
             book = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
         return MockBackend(book)
     if not args.token_file and bid != BackendIds.ETHERCALC:
-        # ethercalc may pass base/room without token file
         if not (args.base_url and args.room):
             raise SystemExit("--token-file required for live backends (or ethercalc --base-url/--room)")
     if bid == BackendIds.GOOGLE_SHEETS:
@@ -57,7 +125,6 @@ def load_rows_stdin(fmt: str) -> tuple[list[str], list[list[str]]]:
             rows = [[str(c) for c in r] for r in data[1:]]
             return headers, rows
         raise SystemExit("JSON must be {headers,rows} or [[header],...rows]")
-    # csv
     reader = csv.reader(raw.splitlines())
     all_rows = [list(r) for r in reader]
     if not all_rows:
@@ -66,12 +133,15 @@ def load_rows_stdin(fmt: str) -> tuple[list[str], list[list[str]]]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw = list(argv if argv is not None else sys.argv[1:])
+    argv_n = normalize_argv(raw)
+
     ap = argparse.ArgumentParser(prog="remotetable", description="remotetable host CLI")
     ap.add_argument(
         "--backend",
         default=BackendIds.MOCK,
         choices=list(BackendIds.ALL),
-        help="backend id",
+        help="backend id (before or after subcommand)",
     )
     ap.add_argument("--token-file", default=None, help="JSON token file (live backends)")
     ap.add_argument("--fixture", default=None, help="mock book JSON path")
@@ -90,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     p_write.add_argument("--mode", choices=["append", "replace"], default="append")
     p_write.add_argument("--format", choices=["json", "csv"], default="json")
 
-    args = ap.parse_args(argv)
+    args = ap.parse_args(argv_n)
     be = build_backend(args)
     rt = RemoteTable(be)
 
@@ -108,7 +178,6 @@ def main(argv: list[str] | None = None) -> int:
         if not headers and rows:
             raise SystemExit("write-rows needs headers")
         if not headers:
-            # allow empty replace with no stdin
             headers = []
         out = rt.write_rows(args.tab, headers, rows, mode=args.mode)
         print(json.dumps(out, indent=2))
