@@ -1,7 +1,12 @@
 package com.davidelang.remotetable
 
-/** Provider-neutral remote table facade (M1). */
+/**
+ * Provider-neutral remote table facade (M2).
+ * Live backends use HttpURLConnection + JSON token/config (no Google/MS client libs).
+ */
 class RemoteTable(private val backend: Backend) {
+    val backendId: String get() = backend.backendId
+
     fun testConnection(): Map<String, Any?> = backend.testConnection()
     fun listTabs(): List<String> = backend.listTabs()
     fun ensureHeaders(tab: String, headers: List<String>): List<String> =
@@ -13,9 +18,20 @@ class RemoteTable(private val backend: Backend) {
         rows: List<List<String>>,
         mode: String = "append",
     ): Int = backend.writeRows(tab, headers, rows, mode)
+
+    /** Extended ops (best-effort; may be no-op / false for some backends). */
+    fun ensureTab(tab: String) = backend.ensureTab(tab)
+    fun renameTab(oldTitle: String, newTitle: String): Boolean = backend.renameTab(oldTitle, newTitle)
+    fun deleteTab(tab: String) = backend.deleteTab(tab)
+    fun clearFromRow(tab: String, startRow1Based: Int) = backend.clearFromRow(tab, startRow1Based)
 }
 
-data class TabData(val headers: List<String>, val rows: List<List<String>>)
+data class TabData(val headers: List<String>, val rows: List<List<String>>) {
+    /** Header + data as sheet grid. */
+    fun asGrid(): List<List<String>> =
+        if (headers.isEmpty() && rows.isEmpty()) emptyList()
+        else listOf(headers) + rows
+}
 
 interface Backend {
     val backendId: String
@@ -24,16 +40,70 @@ interface Backend {
     fun ensureHeaders(tab: String, headers: List<String>): List<String>
     fun readRows(tab: String): TabData
     fun writeRows(tab: String, headers: List<String>, rows: List<List<String>>, mode: String): Int
+    fun ensureTab(tab: String) {}
+    fun renameTab(oldTitle: String, newTitle: String): Boolean = false
+    fun deleteTab(tab: String) {}
+    fun clearFromRow(tab: String, startRow1Based: Int) {
+        val data = readRows(tab)
+        if (data.headers.isEmpty() && data.rows.isEmpty()) return
+        val keep = (startRow1Based - 2).coerceAtLeast(0)
+        writeRows(tab, data.headers, data.rows.take(keep), mode = "replace")
+    }
+}
+
+object BackendIds {
+    const val MOCK = "mock"
+    const val GOOGLE_SHEETS = "google-sheets"
+    const val EXCEL_GRAPH = "excel-graph"
+    const val ETHERCALC = "ethercalc"
+    val LIVE = listOf(GOOGLE_SHEETS, EXCEL_GRAPH, ETHERCALC)
+}
+
+/** Factory for backends from config maps (token strings, not only files). */
+object Backends {
+    fun mock(initial: Map<String, TabData> = emptyMap()): Backend = MockBackend(initial)
+
+    fun googleSheets(accessToken: String, spreadsheetId: String): Backend =
+        GoogleSheetsBackend(accessToken, spreadsheetId)
+
+    fun excelGraph(accessToken: String, itemId: String, driveId: String? = null): Backend =
+        ExcelGraphBackend(accessToken, itemId, driveId)
+
+    fun ethercalc(baseUrl: String, room: String = "sheet", auth: String? = null): Backend =
+        EtherCalcBackend(baseUrl, room, auth)
+
+    fun fromConfig(backendId: String, config: Map<String, String>): Backend = when (backendId) {
+        BackendIds.MOCK -> mock()
+        BackendIds.GOOGLE_SHEETS -> googleSheets(
+            config["access_token"] ?: config["token"] ?: "",
+            config["spreadsheet_id"] ?: "",
+        )
+        BackendIds.EXCEL_GRAPH -> excelGraph(
+            config["access_token"] ?: config["token"] ?: "",
+            config["item_id"] ?: "",
+            config["drive_id"],
+        )
+        BackendIds.ETHERCALC -> ethercalc(
+            config["base_url"] ?: "",
+            config["room"] ?: "sheet",
+            config["auth"] ?: config["access_token"],
+        )
+        else -> throw IllegalArgumentException("unknown backend: $backendId")
+    }
 }
 
 class MockBackend(initial: Map<String, TabData> = emptyMap()) : Backend {
-    override val backendId: String = "mock"
+    override val backendId: String = BackendIds.MOCK
     private val tabs = initial.mapValues { (_, v) ->
         TabData(v.headers.toList(), v.rows.map { it.toMutableList() }.toMutableList())
     }.toMutableMap()
 
     override fun testConnection(): Map<String, Any?> = mapOf("ok" to true, "message" to "mock")
     override fun listTabs(): List<String> = tabs.keys.sorted()
+    override fun ensureTab(tab: String) {
+        if (tab !in tabs) tabs[tab] = TabData(emptyList(), mutableListOf())
+    }
+
     override fun ensureHeaders(tab: String, headers: List<String>): List<String> {
         val cur = tabs[tab]
         if (cur == null) {
@@ -51,22 +121,36 @@ class MockBackend(initial: Map<String, TabData> = emptyMap()) : Backend {
         tabs[tab] = TabData(h, rows)
         return h
     }
+
     override fun readRows(tab: String): TabData = tabs[tab] ?: TabData(emptyList(), emptyList())
+
     override fun writeRows(tab: String, headers: List<String>, rows: List<List<String>>, mode: String): Int {
         ensureHeaders(tab, headers)
         val cur = tabs[tab]!!
         val newRows = if (mode == "replace") {
-            rows.map { it.toMutableList() }.toMutableList()
+            rows.map { pad(it, cur.headers.size) }.toMutableList()
         } else {
-            (cur.rows.map { it.toMutableList() } + rows.map { it.toMutableList() }).toMutableList()
+            (cur.rows.map { it.toMutableList() } + rows.map { pad(it, cur.headers.size) }).toMutableList()
         }
         tabs[tab] = TabData(cur.headers, newRows)
         return rows.size
     }
-}
 
-object BackendIds {
-    const val GOOGLE_SHEETS = "google-sheets"
-    const val EXCEL_GRAPH = "excel-graph"
-    const val ETHERCALC = "ethercalc"
+    override fun renameTab(oldTitle: String, newTitle: String): Boolean {
+        if (oldTitle == newTitle) return true
+        val data = tabs.remove(oldTitle) ?: return newTitle in tabs
+        if (newTitle in tabs) return false
+        tabs[newTitle] = data
+        return true
+    }
+
+    override fun deleteTab(tab: String) {
+        tabs.remove(tab)
+    }
+
+    private fun pad(row: List<String>, width: Int): MutableList<String> {
+        val m = row.toMutableList()
+        while (m.size < width) m.add("")
+        return m
+    }
 }

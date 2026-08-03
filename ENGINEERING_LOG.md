@@ -36,3 +36,9 @@ Append-only activity log for this subproject.
 - Python RemoteTable + MockBackend + live google-sheets/excel-graph/ethercalc
 - conformance PASS; Android AAR recipe; branch email-connection
 
+
+## 2026-08-02 - M2 tests CLI live AAR backends
+
+- Expanded mock harness (replace, multi-tab, pad, empty book) + opt-in live smoke
+- Host CLI scripts/remotetable + python -m remotetable
+- Android AAR: GoogleSheetsBackend, ExcelGraphBackend, EtherCalcBackend + Backends factory

@@ -46,6 +46,29 @@ JSON, CSV, TSV, name=value; multi-tab as **zip** or **tar** (+ gz/xz) of **one f
 
 User-supplied **plain JSON token file**. OAuth device flow and service accounts later.
 
+## CLI (host, M2)
+
+```bash
+# offline mock
+python3 conformance/harness.py
+scripts/remotetable --backend mock --fixture conformance/fixtures/mock_book.json test-connection
+scripts/remotetable --backend mock --fixture conformance/fixtures/mock_book.json list-tabs
+scripts/remotetable --backend mock --fixture conformance/fixtures/mock_book.json read-rows --tab Vehicles
+echo '{"headers":["A","B"],"rows":[["1","2"]]}' | \
+  scripts/remotetable --backend mock write-rows --tab T --mode replace
+
+# live (opt-in)
+scripts/remotetable --backend google-sheets --token-file /path/token.json \
+  --spreadsheet-id ID test-connection
+```
+
+Also: `PYTHONPATH=python python3 -m remotetable …`
+
+## Android AAR (M2)
+
+`android/` ships `RemoteTable` + `MockBackend` + **live** `GoogleSheetsBackend` /
+`ExcelGraphBackend` / `EtherCalcBackend` (HttpURLConnection). Factory: `Backends.*`.
+
 ## Authorship / agents
 
 After GitHub publish, **dedicated agents** own this repo. They should not fight over VehicleExpenses app trees except coordinated migration PRs.
