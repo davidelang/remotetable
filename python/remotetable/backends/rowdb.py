@@ -463,12 +463,82 @@ class _Airtable(_Driver):
             raise RuntimeError(f"Airtable delete HTTP {code}: {text[:200]}")
 
 
+class _Firebase(_Driver):
+    def _auth(self, be: RowDbBackend) -> dict[str, str]:
+        return {"Authorization": f"Bearer {be.token}"}
+
+    def _enc(self, segment: str) -> str:
+        return urllib.parse.quote(segment, safe="")
+
+    def _collection(self, be: RowDbBackend, table_id: str) -> str:
+        return f"{be.base_url}/{self._enc(table_id)}"
+
+    def _document(self, be: RowDbBackend, table_id: str, row_id: str) -> str:
+        return f"{self._collection(be, table_id)}/{self._enc(row_id)}"
+
+    def _parse_field(self, field_obj: dict | None) -> str:
+        if not field_obj:
+            return ""
+        for k in ("stringValue", "integerValue", "doubleValue"):
+            if k in field_obj:
+                return str(field_obj[k])
+        if "booleanValue" in field_obj:
+            return str(field_obj["booleanValue"]).lower()
+        return ""
+
+    def _fields_body(self, headers, row) -> str:
+        fields = {h: {"stringValue": row[i] if i < len(row) else ""} for i, h in enumerate(headers)}
+        return json.dumps({"fields": fields})
+
+    def list_field_maps(self, be, table_id):
+        code, body = _http("GET", self._collection(be, table_id), self._auth(be))
+        if code not in range(200, 300):
+            raise RuntimeError(f"Firestore list HTTP {code}: {body[:200]}")
+        data = json.loads(body) if body.strip() else {}
+        out = []
+        for doc in data.get("documents") or []:
+            name = doc.get("name") or ""
+            rid = name.rsplit("/", 1)[-1]
+            if not rid:
+                continue
+            fields_raw = doc.get("fields") or {}
+            fields = {k: self._parse_field(v if isinstance(v, dict) else None) for k, v in fields_raw.items()}
+            out.append((rid, fields))
+        return out
+
+    def create_row(self, be, table_id, headers, row):
+        sync_idx = headers.index(SYNC_ID) if SYNC_ID in headers else -1
+        sync = row[sync_idx].strip() if sync_idx >= 0 and sync_idx < len(row) else ""
+        url = self._collection(be, table_id)
+        if sync:
+            url = f"{url}?documentId={self._enc(sync)}"
+        code, text = _http("POST", url, self._auth(be), self._fields_body(headers, row))
+        if code not in range(200, 300):
+            raise RuntimeError(f"Firestore create HTTP {code}: {text[:200]}")
+        name = (json.loads(text) or {}).get("name") or ""
+        return name.rsplit("/", 1)[-1] if name else sync
+
+    def update_row(self, be, table_id, row_id, headers, row):
+        mask = "&".join(f"updateMask.fieldPaths={self._enc(h)}" for h in headers)
+        url = f"{self._document(be, table_id, row_id)}?{mask}"
+        code, text = _http("PATCH", url, self._auth(be), self._fields_body(headers, row))
+        if code not in range(200, 300):
+            raise RuntimeError(f"Firestore update HTTP {code}: {text[:200]}")
+
+    def delete_row(self, be, table_id, row_id):
+        code, text = _http("DELETE", self._document(be, table_id, row_id), self._auth(be))
+        if code not in range(200, 300) and code != 404:
+            raise RuntimeError(f"Firestore delete HTTP {code}: {text[:200]}")
+
+
 _DRIVERS: dict[str, Callable[[], _Driver]] = {
     "baserow": _Baserow,
     "nocodb": _NocoDB,
     "pocketbase": _PocketBase,
     "supabase": _Supabase,
     "airtable": _Airtable,
+    "firebase": _Firebase,
+    "firestore": _Firebase,
 }
 
 
@@ -481,6 +551,8 @@ def _driver_for(backend_id: str) -> _Driver:
         "pocketbase": "pocketbase",
         "supabase": "supabase",
         "airtable": "airtable",
+        "firebase": "firebase",
+        "firestore": "firebase",
     }
     norm = aliases.get(key) or aliases.get(backend_id.lower())
     if not norm or norm not in _DRIVERS:

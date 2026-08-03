@@ -8,9 +8,10 @@ class BackendIds:
     POCKETBASE = "pocketbase"
     SUPABASE = "supabase"
     AIRTABLE = "airtable"
-    # OnlyOffice/Collabora land later in remotetable (before rclone).
+    FIREBASE = "firebase"
+    ZOHO_SHEET = "zoho-sheet"
     ONLYOFFICE = "onlyoffice"
     COLLABORA = "collabora"
-    ROW_DB = (BASEROW, NOCODB, POCKETBASE, SUPABASE, AIRTABLE)
-    LIVE = (GOOGLE_SHEETS, EXCEL_GRAPH, ETHERCALC) + ROW_DB
-    ALL = (MOCK,) + LIVE
+    ROW_DB = (BASEROW, NOCODB, POCKETBASE, SUPABASE, AIRTABLE, FIREBASE)
+    LIVE = (GOOGLE_SHEETS, EXCEL_GRAPH, ETHERCALC, ZOHO_SHEET) + ROW_DB
+    ALL = (MOCK,) + LIVE + (ONLYOFFICE, COLLABORA)

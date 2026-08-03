@@ -7,6 +7,7 @@ from .backends.excel_graph import ExcelGraphBackend
 from .backends.google_sheets import GoogleSheetsBackend
 from .backends.mock import MockBackend
 from .backends.rowdb import RowDbBackend
+from .backends.zoho_sheet import ZohoSheetBackend
 from .ids import BackendIds
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "ExcelGraphBackend",
     "EtherCalcBackend",
     "RowDbBackend",
+    "ZohoSheetBackend",
     "BackendIds",
 ]

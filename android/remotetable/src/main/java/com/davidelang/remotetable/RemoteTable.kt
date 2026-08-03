@@ -63,10 +63,12 @@ object BackendIds {
     const val POCKETBASE = "pocketbase"
     const val SUPABASE = "supabase"
     const val AIRTABLE = "airtable"
+    const val FIREBASE = "firebase"
+    const val ZOHO_SHEET = "zoho-sheet"
     const val ONLYOFFICE = "onlyoffice"
     const val COLLABORA = "collabora"
-    val ROW_DB = listOf(BASEROW, NOCODB, POCKETBASE, SUPABASE, AIRTABLE)
-    val LIVE = listOf(GOOGLE_SHEETS, EXCEL_GRAPH, ETHERCALC) + ROW_DB
+    val ROW_DB = listOf(BASEROW, NOCODB, POCKETBASE, SUPABASE, AIRTABLE, FIREBASE)
+    val LIVE = listOf(GOOGLE_SHEETS, EXCEL_GRAPH, ETHERCALC, ZOHO_SHEET) + ROW_DB
 }
 
 /** Factory for backends from config maps (token strings, not only files). */
@@ -105,6 +107,24 @@ object Backends {
     fun airtable(token: String, baseId: String, tables: Map<String, String>): Backend =
         rowDb(BackendIds.AIRTABLE, "https://api.airtable.com", token, tables, baseId)
 
+    fun firebase(projectId: String, token: String, tables: Map<String, String>): Backend {
+        val base = "https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents"
+        return rowDb(BackendIds.FIREBASE, base, token, tables)
+    }
+
+    fun zohoSheet(
+        accessToken: String,
+        workbookId: String,
+        apiDomain: String = "https://sheet.zoho.com",
+        sheets: Map<String, String> = emptyMap(),
+    ): Backend = ZohoSheetBackend(accessToken, workbookId, apiDomain, sheets)
+
+    fun onlyOffice(message: String = "OnlyOffice headless backend deferred"): Backend =
+        DeferredBackend(BackendIds.ONLYOFFICE, message)
+
+    fun collabora(message: String = "Collabora headless backend deferred"): Backend =
+        DeferredBackend(BackendIds.COLLABORA, message)
+
     fun fromConfig(backendId: String, config: Map<String, String>): Backend = when (backendId) {
         BackendIds.MOCK -> mock()
         BackendIds.GOOGLE_SHEETS -> googleSheets(
@@ -121,17 +141,32 @@ object Backends {
             config["room"] ?: "sheet",
             config["auth"] ?: config["access_token"],
         )
-        BackendIds.BASEROW, BackendIds.NOCODB, BackendIds.POCKETBASE, BackendIds.SUPABASE, BackendIds.AIRTABLE -> {
+        BackendIds.BASEROW, BackendIds.NOCODB, BackendIds.POCKETBASE, BackendIds.SUPABASE, BackendIds.AIRTABLE,
+        BackendIds.FIREBASE,
+        -> {
             val tablesJson = config["tables_json"] ?: config["tables"] ?: "{}"
             val tables = parseTablesMap(tablesJson)
+            val base = when {
+                backendId == BackendIds.FIREBASE && config["project_id"].orEmpty().isNotBlank() ->
+                    "https://firestore.googleapis.com/v1/projects/${config["project_id"]}/databases/(default)/documents"
+                else -> config["base_url"] ?: ""
+            }
             rowDb(
                 backendId,
-                config["base_url"] ?: "",
+                base,
                 config["access_token"] ?: config["token"] ?: "",
                 tables,
                 config["base_id"] ?: "",
             )
         }
+        BackendIds.ZOHO_SHEET, "zoho_sheet", "zoho" -> zohoSheet(
+            config["access_token"] ?: config["token"] ?: "",
+            config["workbook_id"] ?: config["item_id"] ?: "",
+            config["api_domain"] ?: "https://sheet.zoho.com",
+            parseTablesMap(config["sheets_json"] ?: config["tables_json"] ?: config["tables"] ?: "{}"),
+        )
+        BackendIds.ONLYOFFICE -> onlyOffice()
+        BackendIds.COLLABORA -> collabora()
         else -> throw IllegalArgumentException("unknown backend: $backendId")
     }
 

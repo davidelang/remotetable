@@ -23,6 +23,7 @@ class RowDbBackend(
         BackendIds.POCKETBASE -> PocketBaseDriver()
         BackendIds.SUPABASE -> SupabaseDriver()
         BackendIds.AIRTABLE -> AirtableDriver()
+        BackendIds.FIREBASE, "firestore" -> FirebaseDriver()
         else -> throw IllegalArgumentException("unknown rowdb kind: $kind")
     }
 
@@ -376,6 +377,96 @@ internal class AirtableDriver : RowDbDriver {
             HttpJson.request("DELETE", url(be, tableId, rowId), auth(be))
         } catch (e: RuntimeException) {
             if (e.message?.contains("HTTP 204") != true) throw e
+        }
+    }
+}
+
+/** Firestore REST — one collection per logical tab. */
+internal class FirebaseDriver : RowDbDriver {
+    private fun auth(be: RowDbBackend) = mapOf("Authorization" to "Bearer ${be.authToken()}")
+
+    private fun enc(segment: String): String =
+        java.net.URLEncoder.encode(segment, Charsets.UTF_8.name()).replace("+", "%20")
+
+    private fun collectionUrl(be: RowDbBackend, tableId: String): String =
+        "${be.base()}/${enc(tableId)}"
+
+    private fun documentUrl(be: RowDbBackend, tableId: String, documentId: String): String =
+        "${collectionUrl(be, tableId)}/${enc(documentId)}"
+
+    private fun parseFieldValue(fieldObj: JSONObject?): String {
+        if (fieldObj == null) return ""
+        return when {
+            fieldObj.has("stringValue") -> fieldObj.optString("stringValue", "")
+            fieldObj.has("integerValue") -> fieldObj.optString("integerValue", "")
+            fieldObj.has("doubleValue") -> fieldObj.optString("doubleValue", "")
+            fieldObj.has("booleanValue") -> fieldObj.optBoolean("booleanValue").toString()
+            else -> ""
+        }
+    }
+
+    private fun fieldsJson(headers: List<String>, row: List<String>): JSONObject {
+        val fields = JSONObject()
+        headers.forEachIndexed { index, header ->
+            fields.put(header, JSONObject().put("stringValue", row.getOrElse(index) { "" }))
+        }
+        return JSONObject().put("fields", fields)
+    }
+
+    private fun documentIdFromName(name: String): String = name.substringAfterLast('/')
+
+    override fun listFieldMaps(be: RowDbBackend, tableId: String): List<Pair<String, Map<String, String>>> {
+        val (_, text) = HttpJson.request("GET", collectionUrl(be, tableId), auth(be))
+        val json = if (text.isBlank()) JSONObject() else JSONObject(text)
+        val documents = json.optJSONArray("documents") ?: JSONArray()
+        val out = mutableListOf<Pair<String, Map<String, String>>>()
+        for (i in 0 until documents.length()) {
+            val doc = documents.optJSONObject(i) ?: continue
+            val docId = documentIdFromName(doc.optString("name", ""))
+            if (docId.isBlank()) continue
+            val fieldsObj = doc.optJSONObject("fields") ?: JSONObject()
+            val fields = mutableMapOf<String, String>()
+            val keys = fieldsObj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                fields[key] = parseFieldValue(fieldsObj.optJSONObject(key))
+            }
+            out.add(docId to fields)
+        }
+        return out
+    }
+
+    override fun createRow(be: RowDbBackend, tableId: String, headers: List<String>, row: List<String>): String {
+        val syncIdx = headers.indexOf(RowDbBackend.SYNC_ID)
+        val syncId = if (syncIdx >= 0) row.getOrElse(syncIdx) { "" }.trim() else ""
+        val url = if (syncId.isNotBlank()) {
+            "${collectionUrl(be, tableId)}?documentId=${enc(syncId)}"
+        } else {
+            collectionUrl(be, tableId)
+        }
+        val (_, text) = HttpJson.request("POST", url, auth(be), fieldsJson(headers, row).toString())
+        val name = JSONObject(text).optString("name", "")
+        return documentIdFromName(name).ifBlank { syncId }
+    }
+
+    override fun updateRow(be: RowDbBackend, tableId: String, rowId: String, headers: List<String>, row: List<String>) {
+        val mask = headers.joinToString("&") { h ->
+            "updateMask.fieldPaths=${enc(h)}"
+        }
+        HttpJson.request(
+            "PATCH",
+            "${documentUrl(be, tableId, rowId)}?$mask",
+            auth(be),
+            fieldsJson(headers, row).toString(),
+        )
+    }
+
+    override fun deleteRow(be: RowDbBackend, tableId: String, rowId: String) {
+        try {
+            HttpJson.request("DELETE", documentUrl(be, tableId, rowId), auth(be))
+        } catch (e: RuntimeException) {
+            if (e.message?.contains("HTTP 404") == true) return
+            throw e
         }
     }
 }
