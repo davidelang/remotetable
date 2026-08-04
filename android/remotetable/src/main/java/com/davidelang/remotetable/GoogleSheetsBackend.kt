@@ -90,17 +90,40 @@ class GoogleSheetsBackend(
         invalidateMeta()
     }
 
+    /**
+     * Ensure header row on [tab].
+     * - Empty or **invalid** first row (missing `Sync ID` when requested headers include it,
+     *   or first row empty) → clear tab values, write **exactly** [headers] to A1.
+     * - Valid first row → append any missing expected names only (preserve order).
+     */
     override fun ensureHeaders(tab: String, headers: List<String>): List<String> {
         ensureTab(tab)
         val cur = readRows(tab)
-        if (cur.headers.isEmpty()) {
-            updateRange(tab, "A1", listOf(headers))
+        if (cur.headers.isEmpty() || !isValidHeaderRow(cur.headers, headers)) {
+            clearTab(tab)
+            if (headers.isNotEmpty()) {
+                updateRange(tab, "A1", listOf(headers))
+            }
             return headers
         }
         val newH = cur.headers.toMutableList()
         for (h in headers) if (h !in newH) newH.add(h)
         if (newH != cur.headers) updateRange(tab, "A1", listOf(newH))
         return newH
+    }
+
+    /**
+     * Header row is valid if non-empty and, when [expected] includes `Sync ID`,
+     * the first row contains that name (trimmed). Prevents treating a data UUID row as headers.
+     */
+    internal fun isValidHeaderRow(current: List<String>, expected: List<String>): Boolean {
+        val first = current.map { it.trim() }.filter { it.isNotEmpty() }
+        if (first.isEmpty()) return false
+        val wantSyncId = expected.any { it.trim() == "Sync ID" }
+        if (wantSyncId) return "Sync ID" in first
+        // No Sync ID in expected schema: at least one expected name present, or any non-empty
+        if (expected.isEmpty()) return true
+        return expected.any { it.trim() in first }
     }
 
     override fun readRows(tab: String): TabData {

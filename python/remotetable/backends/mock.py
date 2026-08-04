@@ -22,14 +22,22 @@ class MockBackend(Backend):
         return sorted(self._tabs.keys())
 
     def ensure_headers(self, tab: str, headers: List[str]) -> dict[str, Any]:
-        if tab not in self._tabs:
+        def valid(cur_h):
+            names = [str(x).strip() for x in (cur_h or []) if str(x).strip()]
+            if not names:
+                return False
+            if any(str(h).strip() == "Sync ID" for h in headers):
+                return "Sync ID" in names
+            return True
+
+        if tab not in self._tabs or not valid(self._tabs[tab].get("headers")):
+            # empty or invalid (e.g. data UUID as header): replace with exact headers
             self._tabs[tab] = {"headers": list(headers), "rows": []}
             return {"ok": True, "headers": list(headers)}
         cur = list(self._tabs[tab].get("headers") or [])
         for h in headers:
             if h not in cur:
                 cur.append(h)
-                # pad existing rows
                 for row in self._tabs[tab]["rows"]:
                     while len(row) < len(cur):
                         row.append("")

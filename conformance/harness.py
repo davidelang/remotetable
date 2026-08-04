@@ -459,8 +459,40 @@ def run_offline_file_backends() -> None:
     print("PASS offline file backends (json-book push/merge + csv-dir)")
 
 
+
+
+def run_header_three_cases() -> None:
+    """No tab / empty / poison-first-row ensureHeaders semantics (mock)."""
+    from remotetable.backends.mock import MockBackend
+
+    # Case 1: no tab → ensure creates headers only
+    be = MockBackend({})
+    ens = be.ensure_headers("Fuel - X", ["Sync ID", "Name", "Updated At"])
+    assert_true(ens["headers"][0] == "Sync ID", ens)
+    assert_true(be.read_rows("Fuel - X")["rows"] == [], "no data yet")
+    be.write_rows("Fuel - X", ens["headers"], [["a", "A", "1"]], mode="replace")
+    assert_true(be.read_rows("Fuel - X")["headers"][0] == "Sync ID", "case1 header")
+    assert_true(len(be.read_rows("Fuel - X")["rows"]) == 1, "case1 data")
+
+    # Case 2: empty tab
+    be2 = MockBackend({"tabs": {"T": {"headers": [], "rows": []}}})
+    ens2 = be2.ensure_headers("T", ["Sync ID", "Cost"])
+    assert_true(ens2["headers"] == ["Sync ID", "Cost"], ens2)
+
+    # Case 3: poison first row (UUID as header) — rewrite exact, drop poison as header
+    poison = ["uuid-as-header", "12.5", "99"]
+    be3 = MockBackend({"tabs": {"P": {"headers": poison, "rows": [["r2", "1", "2"]]}}})
+    ens3 = be3.ensure_headers("P", ["Sync ID", "Gallons", "Cost"])
+    assert_true(ens3["headers"] == ["Sync ID", "Gallons", "Cost"], ens3)
+    assert_true(be3.read_rows("P")["headers"][0] == "Sync ID", "case3 rewritten")
+    # mock drops prior rows on invalid rewrite (coordinator full-rewrites local)
+    assert_true(be3.read_rows("P")["rows"] == [], "case3 cleared body on invalid")
+    print("PASS header three cases (mock ensureHeaders)")
+
+
 def main() -> int:
     run_mock()
+    run_header_three_cases()
     run_rate_limit_helpers()
     run_l2_and_policy()
     run_type_coerce()

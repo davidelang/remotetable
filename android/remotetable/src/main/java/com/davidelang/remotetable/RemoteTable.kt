@@ -342,7 +342,12 @@ class MockBackend(initial: Map<String, TabData> = emptyMap()) : Backend {
 
     override fun ensureHeaders(tab: String, headers: List<String>): List<String> {
         val cur = tabs[tab]
-        if (cur == null) {
+        val curH = cur?.headers.orEmpty()
+        val valid = curH.isNotEmpty() && (
+            headers.none { it.trim() == "Sync ID" } || curH.any { it.trim() == "Sync ID" }
+            )
+        if (cur == null || curH.isEmpty() || !valid) {
+            // Invalid/empty: replace with exact headers; drop poison "header" as data for mock simplicity
             tabs[tab] = TabData(headers.toList(), mutableListOf())
             return headers
         }
