@@ -56,6 +56,13 @@ class RemoteTable(private val backend: Backend) {
     /** Expunge: remove rows so keys are absent. */
     fun expungeWhere(tab: String, filter: Map<String, String>): Int =
         backend.expungeWhere(tab, filter)
+
+    /**
+     * Append data rows without a mandatory full-tab pre-read in the adapter.
+     * Sheets: values:append only. Callers should [ensureHeaders] first when needed.
+     */
+    fun appendDataRows(tab: String, rows: List<List<String>>): Int =
+        backend.appendDataRows(tab, rows)
 }
 
 data class TabWrite(val headers: List<String>, val rows: List<List<String>>)
@@ -149,6 +156,19 @@ interface Backend {
         val removed = data.rows.size - kept.size
         if (removed > 0) writeRows(tab, data.headers, kept, mode = "replace")
         return removed
+    }
+
+    /**
+     * Append data rows. Default may read once for header width; Sheets overrides
+     * with values:append and no pre-read.
+     */
+    fun appendDataRows(tab: String, rows: List<List<String>>): Int {
+        if (rows.isEmpty()) return 0
+        val data = readRows(tab)
+        val headers = data.headers.ifEmpty {
+            List(rows.maxOfOrNull { it.size } ?: 0) { "Col$it" }
+        }
+        return writeRows(tab, headers, rows, mode = "append")
     }
 }
 

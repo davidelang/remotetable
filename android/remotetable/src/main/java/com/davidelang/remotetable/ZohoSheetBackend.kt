@@ -14,11 +14,20 @@ class ZohoSheetBackend(
     private val workbookId: String,
     private val apiDomain: String = "https://sheet.zoho.com",
     private val sheets: Map<String, String> = emptyMap(),
+    rateLimitConfig: RateLimitConfig = RateLimitRegistry.defaultFor(BackendIds.ZOHO_SHEET),
+    progress: RateLimitProgress? = null,
 ) : Backend {
     override val backendId: String = BackendIds.ZOHO_SHEET
+    private val limiter = RateLimiter(rateLimitConfig, progress)
 
     private fun auth(): Map<String, String> =
         mapOf("Authorization" to "Zoho-oauthtoken $accessToken")
+
+    private fun http(
+        method: String,
+        url: String,
+        body: String? = null,
+    ): Pair<Int, String> = HttpJson.request(method, url, auth(), body, limiter = limiter)
 
     private fun enc(name: String): String =
         URLEncoder.encode(name, StandardCharsets.UTF_8.name()).replace("+", "%20")
@@ -43,7 +52,7 @@ class ZohoSheetBackend(
     override fun listTabs(): List<String> {
         if (sheets.isNotEmpty()) return sheets.keys.sorted()
         val url = "${apiBase()}/$workbookId/worksheets"
-        val (_, text) = HttpJson.request("GET", url, auth())
+        val (_, text) = http("GET", url)
         val json = JSONObject(text)
         val worksheets = json.optJSONArray("worksheets")
             ?: json.optJSONObject("worksheet_details")?.let { JSONArray().put(it) }
@@ -61,7 +70,7 @@ class ZohoSheetBackend(
         val name = worksheetName(tab)
         if (name in listTabs()) return
         val body = JSONObject().put("worksheet_name", name)
-        HttpJson.request("POST", "${apiBase()}/$workbookId/worksheets", auth(), body.toString())
+        http("POST", "${apiBase()}/$workbookId/worksheets", body.toString())
     }
 
     override fun ensureHeaders(tab: String, headers: List<String>): List<String> {
@@ -85,7 +94,7 @@ class ZohoSheetBackend(
     override fun readRows(tab: String): TabData {
         val name = worksheetName(tab)
         val url = "${apiBase()}/$workbookId/worksheets/${enc(name)}/cells"
-        val (_, text) = HttpJson.request("GET", url, auth())
+        val (_, text) = http("GET", url)
         val grid = parseCells(text)
         if (grid.isEmpty()) return TabData(emptyList(), emptyList())
         val headers = grid.first()
@@ -115,7 +124,7 @@ class ZohoSheetBackend(
         if (newName in existing) return false
         val body = JSONObject().put("worksheet_name", newName)
         return try {
-            HttpJson.request("PUT", "${apiBase()}/$workbookId/worksheets/${enc(oldName)}", auth(), body.toString())
+            http("PUT", "${apiBase()}/$workbookId/worksheets/${enc(oldName)}", body.toString())
             true
         } catch (_: Exception) {
             false
@@ -125,7 +134,7 @@ class ZohoSheetBackend(
     override fun deleteTab(tab: String) {
         val name = worksheetName(tab)
         try {
-            HttpJson.request("DELETE", "${apiBase()}/$workbookId/worksheets/${enc(name)}", auth())
+            http("DELETE", "${apiBase()}/$workbookId/worksheets/${enc(name)}")
         } catch (e: RuntimeException) {
             if (e.message?.contains("HTTP 404") == true) return
             throw e
@@ -146,10 +155,9 @@ class ZohoSheetBackend(
             }
         }
         val body = JSONObject().put("cells", data)
-        HttpJson.request(
+        http(
             "POST",
             "${apiBase()}/$workbookId/worksheets/${enc(name)}/cells",
-            auth(),
             body.toString(),
         )
     }

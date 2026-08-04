@@ -251,10 +251,54 @@ def run_l2_and_policy() -> None:
     print("PASS L2 + soft-delete + push policy", result)
 
 
+
+
+def run_type_coerce() -> None:
+    from remotetable.cell_types import coerce, coerce_row
+    from remotetable.row_ops import push_table
+
+    assert_true(coerce("$12.50", "number") in ("12.5", "12.50") or coerce("$12.50", "number").startswith("12"), "number")
+    assert_true(coerce("yes", "checkbox") == "true", "checkbox yes")
+    assert_true(coerce("0", "checkbox") == "false", "checkbox 0")
+    assert_true(coerce("1700000000", "timestamp") == "1700000000", "ts epoch")
+
+    src = MockBackend({
+        "tabs": {
+            "L": {
+                "headers": ["id", "amt", "flag", "ts"],
+                "rows": [["k1", "$10.00", "YES", "1700000000000"]],
+            }
+        }
+    })
+    dst = MockBackend({"tabs": {"R": {"headers": ["ID", "Amount", "Flag", "Ts"], "rows": []}}})
+    unit = {
+        "id": "coerce",
+        "direction": "push",
+        "source": {"table": "L"},
+        "dest": {"table": "R"},
+        "columns": [
+            {"name": "ID", "type": "string"},
+            {"name": "Amount", "type": "number"},
+            {"name": "Flag", "type": "checkbox"},
+            {"name": "Ts", "type": "timestamp"},
+        ],
+        "column_map": {"id": "ID", "amt": "Amount", "flag": "Flag", "ts": "Ts"},
+        "keys": ["id"],
+    }
+    push_table(src, dst, unit)
+    row = dst.read_rows("R")["rows"][0]
+    assert_true(row[0] == "k1", row)
+    assert_true(row[1] in ("10", "10.0"), f"amt {row[1]}")
+    assert_true(row[2] == "true", f"flag {row[2]}")
+    assert_true(row[3] == "1700000000000", f"ts {row[3]}")
+    print("PASS type coerce on push")
+
+
 def main() -> int:
     run_mock()
     run_rate_limit_helpers()
     run_l2_and_policy()
+    run_type_coerce()
     run_live_optional()
     print("backends_required:", ", ".join(BackendIds.LIVE))
     return 0

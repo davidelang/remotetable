@@ -143,7 +143,12 @@ object PolicySync {
             }
             val sk = RowOps.keyOf(srow, srcIdx, unit.keys)
             if (sk.isBlank()) continue
-            val mapped = RowOps.mapRow(srcData.headers, srow, destData.headers.ifEmpty { destHeaderNames }, unit.columnMap)
+            val destHdrs = destData.headers.ifEmpty { destHeaderNames }
+            val mapped = CellTypes.coerceRow(
+                destHdrs,
+                RowOps.mapRow(srcData.headers, srow, destHdrs, unit.columnMap),
+                unit.columns,
+            )
             val di = byKey[sk]
             if (di == null) {
                 rows.add(mapped.toMutableList())

@@ -23,7 +23,7 @@ from . import (
     ZohoSheetBackend,
 )
 
-COMMANDS = ("test-connection", "list-tabs", "read-rows", "write-rows")
+COMMANDS = ("test-connection", "list-tabs", "read-rows", "write-rows", "conformance", "push", "sheets-smoke")
 # Flags that take a value (global)
 GLOBAL_VALUE_FLAGS = {
     "--backend",
@@ -33,6 +33,7 @@ GLOBAL_VALUE_FLAGS = {
     "--item-id",
     "--base-url",
     "--room",
+    "--config",
 }
 
 
@@ -146,6 +147,56 @@ def load_rows_stdin(fmt: str) -> tuple[list[str], list[list[str]]]:
     return [str(c) for c in all_rows[0]], [[str(c) for c in r] for r in all_rows[1:]]
 
 
+
+
+def cmd_conformance(_args) -> int:
+    """Run offline conformance harness (preferred agent test path)."""
+    import subprocess
+    root = Path(__file__).resolve().parents[2]
+    harness = root / "conformance" / "harness.py"
+    r = subprocess.run([sys.executable, str(harness)], cwd=str(root))
+    return r.returncode
+
+
+def cmd_push(args) -> int:
+    """Directional push from JSON config using mock tables (no network)."""
+    from .row_ops import push_table
+
+    if not getattr(args, "config", None):
+        raise SystemExit("push requires --config path.json")
+    cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    # Optional embedded fixtures: { "source_book": {...}, "dest_book": {...}, "tables": [unit] }
+    # Or single unit with source/dest tables already in --fixture mock books via two fixtures.
+    tables = cfg.get("tables") or ([cfg] if cfg.get("keys") else [])
+    if not tables:
+        raise SystemExit("config needs tables[] or a single table unit")
+    src_book = cfg.get("source_book") or {"tabs": cfg.get("source_tabs") or {}}
+    dest_book = cfg.get("dest_book") or {"tabs": cfg.get("dest_tabs") or {}}
+    if args.fixture and not src_book.get("tabs"):
+        src_book = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+    src_be = MockBackend(src_book)
+    dest_be = MockBackend(dest_book)
+    results = []
+    for unit in tables:
+        results.append(push_table(src_be, dest_be, unit))
+    print(json.dumps({"ok": True, "results": results, "dest": dest_be.read_rows(tables[0].get("dest", {}).get("table") or tables[0].get("dest", {}).get("tab") or "")}, indent=2))
+    return 0
+
+
+def cmd_sheets_smoke(args) -> int:
+    """Optional live google-sheets test-connection (env or flags)."""
+    import os
+    token = args.token_file or os.environ.get("REMOTETABLE_TOKEN_FILE", "")
+    if not token:
+        print("SKIP sheets-smoke: set --token-file or REMOTETABLE_TOKEN_FILE")
+        return 0
+    sid = args.spreadsheet_id or os.environ.get("REMOTETABLE_SPREADSHEET_ID")
+    be = GoogleSheetsBackend(token, spreadsheet_id=sid)
+    rt = RemoteTable(be)
+    print(json.dumps(rt.test_connection(), indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     raw = list(argv if argv is not None else sys.argv[1:])
     argv_n = normalize_argv(raw)
@@ -163,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--item-id", default=None, help="excel-graph workbook item id")
     ap.add_argument("--base-url", default=None, help="ethercalc base URL")
     ap.add_argument("--room", default=None, help="ethercalc room")
+    ap.add_argument("--config", default=None, help="JSON config for push (mock books + tables)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("test-connection")
@@ -173,8 +225,26 @@ def main(argv: list[str] | None = None) -> int:
     p_write.add_argument("--tab", required=True)
     p_write.add_argument("--mode", choices=["append", "replace"], default="append")
     p_write.add_argument("--format", choices=["json", "csv"], default="json")
+    sub.add_parser(
+        "conformance",
+        help="run offline conformance/harness.py (preferred agent test path)",
+    )
+    sub.add_parser("push", help="directional push from --config JSON using mock backends")
+    sub.add_parser(
+        "sheets-smoke",
+        help="optional live google-sheets test-connection (token env/flags)",
+    )
 
     args = ap.parse_args(argv_n)
+
+    # Test-surface commands (no backend factory required for mock push / harness)
+    if args.cmd == "conformance":
+        return cmd_conformance(args)
+    if args.cmd == "push":
+        return cmd_push(args)
+    if args.cmd == "sheets-smoke":
+        return cmd_sheets_smoke(args)
+
     be = build_backend(args)
     rt = RemoteTable(be)
 

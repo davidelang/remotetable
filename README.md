@@ -8,7 +8,7 @@ Not VehicleExpenses-specific. VehicleExpenses will become a consumer after the l
 
 Normative multi-consumer contract: **`spec/CONTRACT.md`** (layers L0–L4, column_map, soft-delete/expunge, rate limits, readMany/writeMany, types, non-goals).
 
-CLI agents and app integrators share that one document. Conformance harness: `conformance/`.
+**Preferred agent/dev test path (no device):** `python3 conformance/harness.py` or `scripts/remotetable conformance`; mock push via `scripts/remotetable push --config …`. See CONTRACT Testing. CLI agents and app integrators share that one document. Conformance harness: `conformance/`.
 
 ## Status
 

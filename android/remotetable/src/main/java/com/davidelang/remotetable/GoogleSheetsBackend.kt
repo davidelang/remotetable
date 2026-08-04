@@ -170,6 +170,14 @@ class GoogleSheetsBackend(
         return rows.size
     }
 
+    /** values:append only — no full-tab read (caller ensures headers when needed). */
+    override fun appendDataRows(tab: String, rows: List<List<String>>): Int {
+        if (rows.isEmpty()) return 0
+        ensureTab(tab)
+        appendValues(tab, rows)
+        return rows.size
+    }
+
     override fun clearFromRow(tab: String, startRow1Based: Int) {
         if (startRow1Based < 1) return
         val rng = enc("'$tab'!A$startRow1Based:ZZ")

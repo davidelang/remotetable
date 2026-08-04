@@ -14,8 +14,18 @@ class RowDbBackend(
     private val token: String,
     private val tables: Map<String, String>,
     private val baseId: String = "",
+    rateLimitConfig: RateLimitConfig = RateLimitRegistry.defaultFor(kind),
+    progress: RateLimitProgress? = null,
 ) : Backend {
     override val backendId: String = kind.lowercase()
+    private val limiter = RateLimiter(rateLimitConfig, progress)
+
+    internal fun http(
+        method: String,
+        url: String,
+        headers: Map<String, String>,
+        body: String? = null,
+    ): Pair<Int, String> = HttpJson.request(method, url, headers, body, limiter = limiter)
 
     private val driver: RowDbDriver = when (backendId) {
         BackendIds.BASEROW -> BaserowDriver()
@@ -122,7 +132,7 @@ internal class BaserowDriver : RowDbDriver {
         val out = mutableListOf<Pair<String, Map<String, String>>>()
         var page = 1
         while (true) {
-            val (_, text) = HttpJson.request("GET", "${url(be, tableId)}&page=$page&size=200", auth(be))
+            val (_, text) = be.http("GET", "${url(be, tableId)}&page=$page&size=200", auth(be))
             val json = JSONObject(text)
             val results = json.optJSONArray("results") ?: break
             if (results.length() == 0) break
@@ -145,19 +155,19 @@ internal class BaserowDriver : RowDbDriver {
     override fun createRow(be: RowDbBackend, tableId: String, headers: List<String>, row: List<String>): String {
         val body = JSONObject()
         headers.forEachIndexed { i, h -> body.put(h, row.getOrElse(i) { "" }) }
-        val (_, text) = HttpJson.request("POST", url(be, tableId), auth(be), body.toString())
+        val (_, text) = be.http("POST", url(be, tableId), auth(be), body.toString())
         return JSONObject(text).opt("id")?.toString().orEmpty()
     }
 
     override fun updateRow(be: RowDbBackend, tableId: String, rowId: String, headers: List<String>, row: List<String>) {
         val body = JSONObject()
         headers.forEachIndexed { i, h -> body.put(h, row.getOrElse(i) { "" }) }
-        HttpJson.request("PATCH", url(be, tableId, rowId), auth(be), body.toString())
+        be.http("PATCH", url(be, tableId, rowId), auth(be), body.toString())
     }
 
     override fun deleteRow(be: RowDbBackend, tableId: String, rowId: String) {
         try {
-            HttpJson.request("DELETE", url(be, tableId, rowId), auth(be))
+            be.http("DELETE", url(be, tableId, rowId), auth(be))
         } catch (e: RuntimeException) {
             if (e.message?.contains("HTTP 204") != true) throw e
         }
@@ -173,7 +183,7 @@ internal class NocoDbDriver : RowDbDriver {
         var offset = 0
         val limit = 200
         while (true) {
-            val (_, text) = HttpJson.request("GET", "${url(be, tableId)}?offset=$offset&limit=$limit", auth(be))
+            val (_, text) = be.http("GET", "${url(be, tableId)}?offset=$offset&limit=$limit", auth(be))
             val json = JSONObject(text)
             val list = json.optJSONArray("list") ?: break
             if (list.length() == 0) break
@@ -196,7 +206,7 @@ internal class NocoDbDriver : RowDbDriver {
     override fun createRow(be: RowDbBackend, tableId: String, headers: List<String>, row: List<String>): String {
         val body = JSONObject()
         headers.forEachIndexed { i, h -> body.put(h, row.getOrElse(i) { "" }) }
-        val (_, text) = HttpJson.request("POST", url(be, tableId), auth(be), body.toString())
+        val (_, text) = be.http("POST", url(be, tableId), auth(be), body.toString())
         val json = JSONObject(text)
         return json.opt("Id")?.toString() ?: json.opt("id")?.toString().orEmpty()
     }
@@ -204,14 +214,14 @@ internal class NocoDbDriver : RowDbDriver {
     override fun updateRow(be: RowDbBackend, tableId: String, rowId: String, headers: List<String>, row: List<String>) {
         val body = JSONObject().put("Id", rowId.toLongOrNull() ?: rowId)
         headers.forEachIndexed { i, h -> body.put(h, row.getOrElse(i) { "" }) }
-        HttpJson.request("PATCH", url(be, tableId), auth(be), body.toString())
+        be.http("PATCH", url(be, tableId), auth(be), body.toString())
     }
 
     override fun deleteRow(be: RowDbBackend, tableId: String, rowId: String) {
         val idValue: Any = rowId.toLongOrNull() ?: rowId
         val body = JSONArray().put(JSONObject().put("Id", idValue)).toString()
         try {
-            HttpJson.request("DELETE", url(be, tableId), auth(be), body)
+            be.http("DELETE", url(be, tableId), auth(be), body)
         } catch (e: RuntimeException) {
             if (e.message?.contains("HTTP 204") != true) throw e
         }
@@ -229,7 +239,7 @@ internal class PocketBaseDriver : RowDbDriver {
         val out = mutableListOf<Pair<String, Map<String, String>>>()
         var page = 1
         while (true) {
-            val (_, text) = HttpJson.request("GET", "${url(be, tableId)}?page=$page&perPage=200", auth(be))
+            val (_, text) = be.http("GET", "${url(be, tableId)}?page=$page&perPage=200", auth(be))
             val json = JSONObject(text)
             val items = json.optJSONArray("items") ?: break
             if (items.length() == 0) break
@@ -253,19 +263,19 @@ internal class PocketBaseDriver : RowDbDriver {
     override fun createRow(be: RowDbBackend, tableId: String, headers: List<String>, row: List<String>): String {
         val body = JSONObject()
         headers.forEachIndexed { i, h -> body.put(h, row.getOrElse(i) { "" }) }
-        val (_, text) = HttpJson.request("POST", url(be, tableId), auth(be), body.toString())
+        val (_, text) = be.http("POST", url(be, tableId), auth(be), body.toString())
         return JSONObject(text).optString("id", "")
     }
 
     override fun updateRow(be: RowDbBackend, tableId: String, rowId: String, headers: List<String>, row: List<String>) {
         val body = JSONObject()
         headers.forEachIndexed { i, h -> body.put(h, row.getOrElse(i) { "" }) }
-        HttpJson.request("PATCH", url(be, tableId, rowId), auth(be), body.toString())
+        be.http("PATCH", url(be, tableId, rowId), auth(be), body.toString())
     }
 
     override fun deleteRow(be: RowDbBackend, tableId: String, rowId: String) {
         try {
-            HttpJson.request("DELETE", url(be, tableId, rowId), auth(be))
+            be.http("DELETE", url(be, tableId, rowId), auth(be))
         } catch (e: RuntimeException) {
             if (e.message?.contains("HTTP 204") != true) throw e
         }
@@ -285,7 +295,7 @@ internal class SupabaseDriver : RowDbDriver {
     }
 
     override fun listFieldMaps(be: RowDbBackend, tableId: String): List<Pair<String, Map<String, String>>> {
-        val (_, text) = HttpJson.request("GET", url(be, tableId, "select=*"), auth(be))
+        val (_, text) = be.http("GET", url(be, tableId, "select=*"), auth(be))
         val arr = JSONArray(text)
         val out = mutableListOf<Pair<String, Map<String, String>>>()
         for (i in 0 until arr.length()) {
@@ -304,7 +314,7 @@ internal class SupabaseDriver : RowDbDriver {
     override fun createRow(be: RowDbBackend, tableId: String, headers: List<String>, row: List<String>): String {
         val body = JSONObject()
         headers.forEachIndexed { i, h -> body.put(h, row.getOrElse(i) { "" }) }
-        val (_, text) = HttpJson.request("POST", url(be, tableId), auth(be), body.toString())
+        val (_, text) = be.http("POST", url(be, tableId), auth(be), body.toString())
         return try {
             val arr = JSONArray(text)
             arr.optJSONObject(0)?.opt("id")?.toString().orEmpty()
@@ -316,12 +326,12 @@ internal class SupabaseDriver : RowDbDriver {
     override fun updateRow(be: RowDbBackend, tableId: String, rowId: String, headers: List<String>, row: List<String>) {
         val body = JSONObject()
         headers.forEachIndexed { i, h -> body.put(h, row.getOrElse(i) { "" }) }
-        HttpJson.request("PATCH", url(be, tableId, "id=eq.$rowId"), auth(be), body.toString())
+        be.http("PATCH", url(be, tableId, "id=eq.$rowId"), auth(be), body.toString())
     }
 
     override fun deleteRow(be: RowDbBackend, tableId: String, rowId: String) {
         try {
-            HttpJson.request("DELETE", url(be, tableId, "id=eq.$rowId"), auth(be))
+            be.http("DELETE", url(be, tableId, "id=eq.$rowId"), auth(be))
         } catch (e: RuntimeException) {
             if (e.message?.contains("HTTP 204") != true) throw e
         }
@@ -340,7 +350,7 @@ internal class AirtableDriver : RowDbDriver {
         var offset: String? = null
         while (true) {
             val q = if (offset.isNullOrBlank()) "" else "?offset=$offset"
-            val (_, text) = HttpJson.request("GET", url(be, tableId) + q, auth(be))
+            val (_, text) = be.http("GET", url(be, tableId) + q, auth(be))
             val json = JSONObject(text)
             val records = json.optJSONArray("records") ?: break
             for (i in 0 until records.length()) {
@@ -361,7 +371,7 @@ internal class AirtableDriver : RowDbDriver {
         val fields = JSONObject()
         headers.forEachIndexed { i, h -> fields.put(h, row.getOrElse(i) { "" }) }
         val body = JSONObject().put("fields", fields).toString()
-        val (_, text) = HttpJson.request("POST", url(be, tableId), auth(be), body)
+        val (_, text) = be.http("POST", url(be, tableId), auth(be), body)
         return JSONObject(text).optString("id", "")
     }
 
@@ -369,12 +379,12 @@ internal class AirtableDriver : RowDbDriver {
         val fields = JSONObject()
         headers.forEachIndexed { i, h -> fields.put(h, row.getOrElse(i) { "" }) }
         val body = JSONObject().put("fields", fields).toString()
-        HttpJson.request("PATCH", url(be, tableId, rowId), auth(be), body)
+        be.http("PATCH", url(be, tableId, rowId), auth(be), body)
     }
 
     override fun deleteRow(be: RowDbBackend, tableId: String, rowId: String) {
         try {
-            HttpJson.request("DELETE", url(be, tableId, rowId), auth(be))
+            be.http("DELETE", url(be, tableId, rowId), auth(be))
         } catch (e: RuntimeException) {
             if (e.message?.contains("HTTP 204") != true) throw e
         }
@@ -416,7 +426,7 @@ internal class FirebaseDriver : RowDbDriver {
     private fun documentIdFromName(name: String): String = name.substringAfterLast('/')
 
     override fun listFieldMaps(be: RowDbBackend, tableId: String): List<Pair<String, Map<String, String>>> {
-        val (_, text) = HttpJson.request("GET", collectionUrl(be, tableId), auth(be))
+        val (_, text) = be.http("GET", collectionUrl(be, tableId), auth(be))
         val json = if (text.isBlank()) JSONObject() else JSONObject(text)
         val documents = json.optJSONArray("documents") ?: JSONArray()
         val out = mutableListOf<Pair<String, Map<String, String>>>()
@@ -444,7 +454,7 @@ internal class FirebaseDriver : RowDbDriver {
         } else {
             collectionUrl(be, tableId)
         }
-        val (_, text) = HttpJson.request("POST", url, auth(be), fieldsJson(headers, row).toString())
+        val (_, text) = be.http("POST", url, auth(be), fieldsJson(headers, row).toString())
         val name = JSONObject(text).optString("name", "")
         return documentIdFromName(name).ifBlank { syncId }
     }
@@ -453,7 +463,7 @@ internal class FirebaseDriver : RowDbDriver {
         val mask = headers.joinToString("&") { h ->
             "updateMask.fieldPaths=${enc(h)}"
         }
-        HttpJson.request(
+        be.http(
             "PATCH",
             "${documentUrl(be, tableId, rowId)}?$mask",
             auth(be),
@@ -463,7 +473,7 @@ internal class FirebaseDriver : RowDbDriver {
 
     override fun deleteRow(be: RowDbBackend, tableId: String, rowId: String) {
         try {
-            HttpJson.request("DELETE", documentUrl(be, tableId, rowId), auth(be))
+            be.http("DELETE", documentUrl(be, tableId, rowId), auth(be))
         } catch (e: RuntimeException) {
             if (e.message?.contains("HTTP 404") == true) return
             throw e

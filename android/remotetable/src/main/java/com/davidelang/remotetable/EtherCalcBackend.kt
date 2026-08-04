@@ -14,9 +14,12 @@ class EtherCalcBackend(
     baseUrl: String,
     private val room: String = "sheet",
     private val auth: String? = null,
+    rateLimitConfig: RateLimitConfig = RateLimitRegistry.defaultFor(BackendIds.ETHERCALC),
+    progress: RateLimitProgress? = null,
 ) : Backend {
     override val backendId: String = BackendIds.ETHERCALC
     private val base = baseUrl.trimEnd('/')
+    private val limiter = RateLimiter(rateLimitConfig, progress)
 
     private fun authHeaders(contentType: String? = null): Map<String, String> = buildMap {
         if (!auth.isNullOrBlank()) put("Authorization", "Bearer $auth")
@@ -94,7 +97,7 @@ class EtherCalcBackend(
         return oldTitle == newTitle || oldTitle == room
     }
 
-    private fun getCsv(): String {
+    private fun getCsv(): String = limiter.withLimit {
         val url = "$base/$room.csv"
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
@@ -109,45 +112,47 @@ class EtherCalcBackend(
             if (code !in 200..299 && code != 404) {
                 throw RuntimeException("ethercalc HTTP $code: ${text.take(200)}")
             }
-            return if (code == 404) "" else text
+            if (code == 404) "" else text
         } finally {
             conn.disconnect()
         }
     }
 
     private fun putCsv(text: String) {
-        val data = text.toByteArray(StandardCharsets.UTF_8)
-        try {
-            val conn = (URL("$base/$room").openConnection() as HttpURLConnection).apply {
-                requestMethod = "PUT"
-                doOutput = true
-                connectTimeout = 30_000
-                readTimeout = 60_000
-                authHeaders("text/csv").forEach { (k, v) -> setRequestProperty(k, v) }
-            }
+        limiter.withLimit {
+            val data = text.toByteArray(StandardCharsets.UTF_8)
             try {
-                conn.outputStream.use { it.write(data) }
-                if (conn.responseCode !in 200..299) {
-                    throw RuntimeException("PUT failed ${conn.responseCode}")
+                val conn = (URL("$base/$room").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    doOutput = true
+                    connectTimeout = 30_000
+                    readTimeout = 60_000
+                    authHeaders("text/csv").forEach { (k, v) -> setRequestProperty(k, v) }
                 }
-            } finally {
-                conn.disconnect()
-            }
-        } catch (_: Exception) {
-            val conn = (URL("$base/_/$room").openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                doOutput = true
-                connectTimeout = 30_000
-                readTimeout = 60_000
-                authHeaders("text/csv").forEach { (k, v) -> setRequestProperty(k, v) }
-            }
-            try {
-                conn.outputStream.use { it.write(data) }
-                if (conn.responseCode !in 200..299) {
-                    throw RuntimeException("POST append failed ${conn.responseCode}")
+                try {
+                    conn.outputStream.use { it.write(data) }
+                    if (conn.responseCode !in 200..299) {
+                        throw RuntimeException("PUT failed ${conn.responseCode}")
+                    }
+                } finally {
+                    conn.disconnect()
                 }
-            } finally {
-                conn.disconnect()
+            } catch (_: Exception) {
+                val conn = (URL("$base/_/$room").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 30_000
+                    readTimeout = 60_000
+                    authHeaders("text/csv").forEach { (k, v) -> setRequestProperty(k, v) }
+                }
+                try {
+                    conn.outputStream.use { it.write(data) }
+                    if (conn.responseCode !in 200..299) {
+                        throw RuntimeException("POST append failed ${conn.responseCode}")
+                    }
+                } finally {
+                    conn.disconnect()
+                }
             }
         }
     }

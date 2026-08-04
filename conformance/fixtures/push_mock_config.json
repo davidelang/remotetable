@@ -1,0 +1,34 @@
+{
+  "source_book": {
+    "tabs": {
+      "Local": {
+        "headers": ["syncId", "amt", "deleted"],
+        "rows": [["a", "$5.00", ""], ["b", "1", "true"]]
+      }
+    }
+  },
+  "dest_book": {
+    "tabs": {
+      "Remote": {
+        "headers": ["Sync ID", "Amount", "Deleted"],
+        "rows": [["b", "1", ""]]
+      }
+    }
+  },
+  "tables": [
+    {
+      "id": "demo",
+      "direction": "push",
+      "source": { "table": "Local" },
+      "dest": { "table": "Remote" },
+      "columns": [
+        { "name": "Sync ID", "type": "string" },
+        { "name": "Amount", "type": "number" },
+        { "name": "Deleted", "type": "checkbox" }
+      ],
+      "column_map": { "syncId": "Sync ID", "amt": "Amount", "deleted": "Deleted" },
+      "keys": ["syncId"],
+      "tombstone": { "column": "deleted", "true_values": ["true", "1", "yes"] }
+    }
+  ]
+}

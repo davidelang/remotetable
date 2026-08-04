@@ -9,9 +9,12 @@ class ExcelGraphBackend(
     private val accessToken: String,
     private val itemId: String,
     private val driveId: String? = null,
+    rateLimitConfig: RateLimitConfig = RateLimitRegistry.defaultFor(BackendIds.EXCEL_GRAPH),
+    progress: RateLimitProgress? = null,
 ) : Backend {
     override val backendId: String = BackendIds.EXCEL_GRAPH
     private val graph = "https://graph.microsoft.com/v1.0"
+    private val limiter = RateLimiter(rateLimitConfig, progress)
 
     private fun root(): String =
         if (!driveId.isNullOrBlank()) {
@@ -28,12 +31,21 @@ class ExcelGraphBackend(
     private fun encSheet(name: String): String =
         URLEncoder.encode(name, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
+    private fun getJson(url: String): JSONObject = HttpJson.getJson(url, headers(), limiter)
+    private fun postJson(url: String, body: JSONObject): JSONObject =
+        HttpJson.postJson(url, headers(), body, limiter)
+    private fun patchJson(url: String, body: JSONObject): JSONObject =
+        HttpJson.patchJson(url, headers(), body, limiter)
+    private fun http(method: String, url: String, body: String? = null): Pair<Int, String> =
+        HttpJson.request(method, url, headers(), body, limiter = limiter)
+
+
     override fun testConnection(): Map<String, Any?> {
         if (accessToken.isBlank() || itemId.isBlank()) {
             return mapOf("ok" to false, "message" to "missing access_token or item_id", "code" to "auth")
         }
         return try {
-            val data = HttpJson.getJson("${root()}/worksheets", headers())
+            val data = getJson("${root()}/worksheets")
             val n = data.optJSONArray("value")?.length() ?: 0
             mapOf("ok" to true, "message" to "workbook ok sheets=$n")
         } catch (e: Exception) {
@@ -42,7 +54,7 @@ class ExcelGraphBackend(
     }
 
     override fun listTabs(): List<String> {
-        val data = HttpJson.getJson("${root()}/worksheets", headers())
+        val data = getJson("${root()}/worksheets")
         val arr = data.optJSONArray("value") ?: return emptyList()
         val out = mutableListOf<String>()
         for (i in 0 until arr.length()) {
@@ -54,9 +66,8 @@ class ExcelGraphBackend(
 
     override fun ensureTab(tab: String) {
         if (tab in listTabs()) return
-        HttpJson.postJson(
+        postJson(
             "${root()}/worksheets/add",
-            headers(),
             JSONObject().put("name", tab),
         )
     }
@@ -76,7 +87,7 @@ class ExcelGraphBackend(
 
     override fun readRows(tab: String): TabData {
         val name = encSheet(tab)
-        val data = HttpJson.getJson("${root()}/worksheets('$name')/usedRange", headers())
+        val data = getJson("${root()}/worksheets('$name')/usedRange")
         val values = data.optJSONArray("values") ?: return TabData(emptyList(), emptyList())
         if (values.length() == 0) return TabData(emptyList(), emptyList())
         val headers = mutableListOf<String>()
@@ -116,9 +127,8 @@ class ExcelGraphBackend(
         if (oldTitle !in tabs) return newTitle in tabs
         if (newTitle in tabs) return false
         val name = encSheet(oldTitle)
-        HttpJson.patchJson(
+        patchJson(
             "${root()}/worksheets('$name')",
-            headers(),
             JSONObject().put("name", newTitle),
         )
         return true
@@ -126,13 +136,13 @@ class ExcelGraphBackend(
 
     override fun deleteTab(tab: String) {
         val name = encSheet(tab)
-        HttpJson.request("DELETE", "${root()}/worksheets('$name')", headers())
+        http("DELETE", "${root()}/worksheets('$name')")
     }
 
     private fun writeRange(tab: String, a1: String, values: List<List<String>>) {
         if (values.isEmpty()) return
         val name = encSheet(tab)
         val url = "${root()}/worksheets('$name')/range(address='$a1')"
-        HttpJson.patchJson(url, headers(), JSONObject().put("values", HttpJson.jsonArrayOfRows(values)))
+        patchJson(url, JSONObject().put("values", HttpJson.jsonArrayOfRows(values)))
     }
 }

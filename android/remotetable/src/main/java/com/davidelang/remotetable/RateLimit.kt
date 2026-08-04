@@ -152,7 +152,31 @@ object RateLimitRegistry {
     private val defaults = ConcurrentHashMap<String, RateLimitConfig>()
 
     init {
+        // min_gap_ms is the primary throttle; read/write_per_minute are documentation/config
+        // for apps (dual independent buckets not required in foundation).
         defaults[BackendIds.GOOGLE_SHEETS] = RateLimitConfig.GOOGLE_SHEETS
+        val conservative = RateLimitConfig(
+            readPerMinute = 45,
+            writePerMinute = 45,
+            minGapMs = 1_300L,
+            maxAttempts = 8,
+        )
+        defaults[BackendIds.EXCEL_GRAPH] = conservative
+        defaults[BackendIds.ETHERCALC] = RateLimitConfig(
+            readPerMinute = 60,
+            writePerMinute = 60,
+            minGapMs = 1_000L,
+            maxAttempts = 8,
+        )
+        defaults[BackendIds.ZOHO_SHEET] = conservative
+        for (id in BackendIds.ROW_DB) {
+            defaults[id] = RateLimitConfig(
+                readPerMinute = 60,
+                writePerMinute = 60,
+                minGapMs = 1_000L,
+                maxAttempts = 8,
+            )
+        }
     }
 
     fun setDefault(backendId: String, config: RateLimitConfig) {

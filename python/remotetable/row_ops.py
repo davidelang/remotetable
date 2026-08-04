@@ -5,6 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, List, Mapping, MutableMapping, Sequence, Tuple
 
+from .cell_types import coerce_row
+
 DEFAULT_TRUE_VALUES = ("true", "1", "yes", "TRUE", "True")
 
 
@@ -190,7 +192,11 @@ def push_table(
         ):
             if sk not in by_key:
                 continue
-        mapped = map_row(src["headers"], srow, headers, column_map)
+        mapped = coerce_row(
+            headers,
+            map_row(src["headers"], srow, headers, column_map),
+            columns if isinstance(columns, list) else [],
+        )
         di = by_key.get(sk)
         if di is None:
             rows.append(mapped)

@@ -178,3 +178,41 @@ See repo `README.md`, consumer `SOURCE.md`, and VE `docs/reference/THIRD_PARTY_P
 | `spec/OVERVIEW.md` | Milestone overview |
 | `conformance/README.md` | Harness + live smoke |
 | This file | Layers, policy, rate limits, batch, soft-delete/expunge |
+
+---
+
+## Types coerce (boundaries)
+
+On PolicySync push (and any documented map/write boundary), cell values are coerced using `columns[].type`:
+
+| type | Wire cell form |
+|------|----------------|
+| `string` | as-is (default / unknown type) |
+| `number` | strip currency/junk; numeric string |
+| `timestamp` | prefer epoch millis digits; ISO digits best-effort |
+| `checkbox` | canonical `true` / `false` |
+
+---
+
+## Rate limits (all HTTP backends)
+
+Every Kotlin HTTP backend that performs network I/O uses a non-null `RateLimiter` (defaults in `RateLimitRegistry` for `google-sheets`, `excel-graph`, `ethercalc`, `zoho-sheet`, and all row-db ids). **`min_gap_ms` is the primary throttle**; read/write per-minute fields document expectations (independent dual buckets not required in foundation).
+
+---
+
+## Testing (CLI / harness)
+
+**Preferred agent/dev test path** (no VE device required):
+
+```bash
+# from materialized third_party/remotetable/src (or library clone root)
+python3 conformance/harness.py
+# or CLI:
+scripts/remotetable conformance
+# mock directional push:
+scripts/remotetable push --config path/to/push-config.json
+```
+
+Optional live smoke: `scripts/remotetable sheets-smoke --token-file …` (or `REMOTETABLE_TOKEN_FILE`).
+
+CLI/harness is the preferred verification before VE pin promote or emulator tests.
