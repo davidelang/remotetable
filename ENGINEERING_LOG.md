@@ -47,3 +47,5 @@ Append-only activity log for this subproject.
 
 - normalize_argv: --backend/--fixture before or after subcommand
 - conformance/cli_flag_order_smoke.sh; conformance/README live copy-paste
+
+## 2026-08-03 - PR prepared: sandbox/PRs/PR-email-connection.md (rebase onto master; tests OK)
