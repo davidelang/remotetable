@@ -146,9 +146,60 @@ AND of field **equalities** only. `IN` / `is_empty` later.
 
 ---
 
+
+
+---
+
+## Local / file backends (offline L0)
+
+First-class endpoints for convert/copy/push/merge **without network**.
+
+| Backend id | Role | Host (Python) | Kotlin AAR |
+|------------|------|---------------|------------|
+| **`mock`** | Ephemeral in-memory (tests/fixtures) | yes | yes |
+| **`local`** / **`memory`** | Explicit multi-tab in-memory book | yes | yes |
+| **`json-book`** | Durable JSON file `{ "tabs": { name: { headers, rows } } }` | yes | yes |
+| **`csv-dir`** | Directory of `*.csv` (tab name = file stem) | yes | **host-only** (Python); not in AAR |
+
+**json-book persistence:** each `write_rows` / header ensure flushes the **whole book** to the path (simple durable offline use).
+
+**csv-dir:** UTF-8 CSV with standard quoting; one file per tab; create missing files on write.
+
+### Offline recipes
+
+```bash
+# push between two json-book files (config endpoints include backend+path)
+scripts/remotetable push --config offline-push.json
+scripts/remotetable copy --config offline-push.json   # alias of push
+scripts/remotetable merge --config offline-merge.json
+
+# open a book
+scripts/remotetable --backend json-book --path /tmp/book.json list-tabs
+scripts/remotetable --backend csv-dir --path /tmp/tabs test-connection
+```
+
+Example endpoint objects inside a table unit:
+
+```json
+"source": { "backend": "json-book", "path": "/tmp/a.json", "table": "Fuel" },
+"dest": { "backend": "json-book", "path": "/tmp/b.json", "table": "Fuel" }
+```
+
+Or embed mock books via top-level `source_book` / `dest_book` / `book_a` / `book_b` as before.
+
+### Room / internal DB (consumer adapter — not shipped)
+
+Room (or any SQL store) stays **out of library core**. Apps implement `Backend` mapping DAO ↔ `TabData` (string grid). Example (non-normative):
+
+```text
+// VE (future): class RoomFuelBackend : Backend
+// maps FuelDao queries/upserts ↔ readRows/writeRows; no Room dep in remotetable
+```
+
+
 ## Explicit non-goals (this contract layer)
 
-- Room / internal DB backend as L0 endpoint (later)
+- Room/SQLite **inside** the library core (apps implement Backend adapter instead)
 - VE fuel domain field-merge or trip-type product rules (app L4)
 - Field-level timestamps (row ts only for fill conflicts)
 - Automatic expunge during merge

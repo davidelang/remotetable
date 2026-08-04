@@ -1,5 +1,9 @@
 class BackendIds:
     MOCK = "mock"
+    LOCAL = "local"
+    MEMORY = "memory"  # alias of local
+    JSON_BOOK = "json-book"
+    CSV_DIR = "csv-dir"
     GOOGLE_SHEETS = "google-sheets"
     EXCEL_GRAPH = "excel-graph"
     ETHERCALC = "ethercalc"
@@ -14,4 +18,5 @@ class BackendIds:
     COLLABORA = "collabora"
     ROW_DB = (BASEROW, NOCODB, POCKETBASE, SUPABASE, AIRTABLE, FIREBASE)
     LIVE = (GOOGLE_SHEETS, EXCEL_GRAPH, ETHERCALC, ZOHO_SHEET) + ROW_DB
-    ALL = (MOCK,) + LIVE + (ONLYOFFICE, COLLABORA)
+    OFFLINE = (MOCK, LOCAL, MEMORY, JSON_BOOK, CSV_DIR)
+    ALL = OFFLINE + LIVE + (ONLYOFFICE, COLLABORA)

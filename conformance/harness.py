@@ -366,14 +366,109 @@ def run_merge_suite() -> None:
     print("PASS merge suite (union/lww_row/field_fill/tombstone/tie/write)")
 
 
+def run_offline_file_backends() -> None:
+    """json-book + csv-dir push/merge without network."""
+    import tempfile
+    from pathlib import Path
+
+    from remotetable.backends.csv_dir import CsvDirBackend
+    from remotetable.backends.json_book import JsonBookBackend
+    from remotetable.row_ops import merge_tables, push_table
+
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        src_path = td / "src.json"
+        dst_path = td / "dst.json"
+        src = JsonBookBackend(src_path)
+        dst = JsonBookBackend(dst_path)
+        src.write_rows(
+            "T",
+            ["Sync ID", "Name", "Updated At"],
+            [["a", "Alpha", "100"], ["b", "Beta", "50"]],
+            mode="replace",
+        )
+        # round-trip read
+        reloaded = JsonBookBackend(src_path)
+        assert_true(reloaded.read_rows("T")["rows"][0][1] == "Alpha", "json-book round-trip")
+        unit = {
+            "direction": "push",
+            "source": {"table": "T"},
+            "dest": {"table": "T"},
+            "keys": ["Sync ID"],
+            "timestamp": "Updated At",
+            "columns": [
+                {"name": "Sync ID", "type": "string"},
+                {"name": "Name", "type": "string"},
+                {"name": "Updated At", "type": "timestamp"},
+            ],
+            "column_map": {},
+        }
+        push_table(src, dst, unit)
+        assert_true(len(JsonBookBackend(dst_path).read_rows("T")["rows"]) == 2, "push to json-book")
+
+        # csv-dir with comma/quote
+        cdir = td / "csvs"
+        csv_be = CsvDirBackend(cdir)
+        csv_be.write_rows(
+            "Sheet One",
+            ["A", "B"],
+            [["1", "hello, world"], ["2", 'say "hi"']],
+            mode="replace",
+        )
+        back = CsvDirBackend(cdir).read_rows("Sheet One")
+        assert_true(back["rows"][0][1] == "hello, world", f"csv quote {back}")
+        assert_true("Sheet One" in csv_be.list_tabs() or "Sheet One" in CsvDirBackend(cdir).list_tabs(), "csv tabs")
+
+        # merge two json-books
+        a_path, b_path = td / "ma.json", td / "mb.json"
+        ja = JsonBookBackend(a_path)
+        jb = JsonBookBackend(b_path)
+        ja.write_rows(
+            "M",
+            ["Sync ID", "Updated At", "Notes"],
+            [["k1", "100", "from-a"], ["k2", "10", "only-a"]],
+            mode="replace",
+        )
+        jb.write_rows(
+            "M",
+            ["Sync ID", "Updated At", "Notes"],
+            [["k1", "200", "from-b"]],
+            mode="replace",
+        )
+        res = merge_tables(
+            ja,
+            jb,
+            {
+                "merge_mode": "lww_row",
+                "write_target": "b",
+                "a": {"table": "M"},
+                "b": {"table": "M"},
+                "keys": ["Sync ID"],
+                "timestamp": "Updated At",
+                "columns": [
+                    {"name": "Sync ID", "type": "string"},
+                    {"name": "Updated At", "type": "timestamp"},
+                    {"name": "Notes", "type": "string"},
+                ],
+            },
+        )
+        assert_true(res["written"] is True, str(res))
+        by = {r[0]: r for r in JsonBookBackend(b_path).read_rows("M")["rows"]}
+        assert_true(by["k1"][2] == "from-b", by)
+        assert_true("k2" in by, by)
+    print("PASS offline file backends (json-book push/merge + csv-dir)")
+
+
 def main() -> int:
     run_mock()
     run_rate_limit_helpers()
     run_l2_and_policy()
     run_type_coerce()
     run_merge_suite()
+    run_offline_file_backends()
     run_live_optional()
     print("backends_required:", ", ".join(BackendIds.LIVE))
+    print("backends_offline:", ", ".join(BackendIds.OFFLINE))
     return 0
 
 

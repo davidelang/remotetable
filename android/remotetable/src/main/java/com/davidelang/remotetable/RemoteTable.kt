@@ -174,6 +174,11 @@ interface Backend {
 
 object BackendIds {
     const val MOCK = "mock"
+    const val LOCAL = "local"
+    const val MEMORY = "memory"
+    const val JSON_BOOK = "json-book"
+    /** Host-only (Python); not implemented in AAR. */
+    const val CSV_DIR = "csv-dir"
     const val GOOGLE_SHEETS = "google-sheets"
     const val EXCEL_GRAPH = "excel-graph"
     const val ETHERCALC = "ethercalc"
@@ -188,11 +193,17 @@ object BackendIds {
     const val COLLABORA = "collabora"
     val ROW_DB = listOf(BASEROW, NOCODB, POCKETBASE, SUPABASE, AIRTABLE, FIREBASE)
     val LIVE = listOf(GOOGLE_SHEETS, EXCEL_GRAPH, ETHERCALC, ZOHO_SHEET) + ROW_DB
+    val OFFLINE = listOf(MOCK, LOCAL, MEMORY, JSON_BOOK)
 }
 
 /** Factory for backends from config maps (token strings, not only files). */
 object Backends {
     fun mock(initial: Map<String, TabData> = emptyMap()): Backend = MockBackend(initial)
+
+    fun local(initial: Map<String, TabData> = emptyMap()): Backend = LocalBackend(initial)
+
+    fun jsonBook(path: String, initial: Map<String, TabData> = emptyMap()): Backend =
+        JsonBookBackend(path, initial)
 
     fun googleSheets(
         accessToken: String,
@@ -250,6 +261,13 @@ object Backends {
 
     fun fromConfig(backendId: String, config: Map<String, String>): Backend = when (backendId) {
         BackendIds.MOCK -> mock()
+        BackendIds.LOCAL, BackendIds.MEMORY -> local()
+        BackendIds.JSON_BOOK -> jsonBook(
+            config["path"] ?: config["file"] ?: "",
+        )
+        BackendIds.CSV_DIR -> throw IllegalArgumentException(
+            "csv-dir is host-only (Python); not available in Android AAR",
+        )
         BackendIds.GOOGLE_SHEETS -> googleSheets(
             config["access_token"] ?: config["token"] ?: "",
             config["spreadsheet_id"] ?: "",

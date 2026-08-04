@@ -14,9 +14,12 @@ from pathlib import Path
 
 from . import (
     BackendIds,
+    CsvDirBackend,
     EtherCalcBackend,
     ExcelGraphBackend,
     GoogleSheetsBackend,
+    JsonBookBackend,
+    LocalBackend,
     MockBackend,
     RemoteTable,
     RowDbBackend,
@@ -30,6 +33,7 @@ COMMANDS = (
     "write-rows",
     "conformance",
     "push",
+    "copy",
     "merge",
     "sheets-smoke",
 )
@@ -38,6 +42,7 @@ GLOBAL_VALUE_FLAGS = {
     "--backend",
     "--token-file",
     "--fixture",
+    "--path",
     "--spreadsheet-id",
     "--item-id",
     "--base-url",
@@ -99,6 +104,30 @@ def normalize_argv(argv: list[str]) -> list[str]:
     return other_before + globals_out + [cmd] + sub_args
 
 
+def build_backend_from_spec(spec: dict | None, *, default_path: str | None = None):
+    """Build backend from config endpoint object: {backend, path, table, ...}."""
+    spec = spec or {}
+    bid = (spec.get("backend") or BackendIds.MOCK).strip()
+    path = spec.get("path") or default_path
+    if bid == BackendIds.MOCK:
+        book = spec.get("book") or {"tabs": {}}
+        if spec.get("fixture"):
+            book = json.loads(Path(spec["fixture"]).read_text(encoding="utf-8"))
+        return MockBackend(book)
+    if bid in (BackendIds.LOCAL, BackendIds.MEMORY):
+        book = spec.get("book") or {"tabs": {}}
+        return LocalBackend(book)
+    if bid == BackendIds.JSON_BOOK:
+        if not path:
+            raise SystemExit("json-book requires path")
+        return JsonBookBackend(path)
+    if bid == BackendIds.CSV_DIR:
+        if not path:
+            raise SystemExit("csv-dir requires path")
+        return CsvDirBackend(path)
+    raise SystemExit(f"build_backend_from_spec: unsupported offline backend {bid}")
+
+
 def build_backend(args: argparse.Namespace):
     bid = args.backend
     if bid == BackendIds.MOCK:
@@ -106,6 +135,21 @@ def build_backend(args: argparse.Namespace):
         if args.fixture:
             book = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
         return MockBackend(book)
+    if bid in (BackendIds.LOCAL, BackendIds.MEMORY):
+        book = {}
+        if args.fixture:
+            book = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
+        return LocalBackend(book)
+    if bid == BackendIds.JSON_BOOK:
+        path = getattr(args, "path", None)
+        if not path:
+            raise SystemExit("json-book requires --path FILE.json")
+        return JsonBookBackend(path)
+    if bid == BackendIds.CSV_DIR:
+        path = getattr(args, "path", None)
+        if not path:
+            raise SystemExit("csv-dir requires --path DIR")
+        return CsvDirBackend(path)
     if bid in BackendIds.ROW_DB:
         if not args.token_file:
             raise SystemExit("--token-file required for row-db backends (JSON with token + tables)")
@@ -114,6 +158,8 @@ def build_backend(args: argparse.Namespace):
         if not args.token_file:
             raise SystemExit("--token-file required for zoho-sheet (access_token + workbook_id)")
         return ZohoSheetBackend(token_file=args.token_file)
+    if bid in BackendIds.OFFLINE:
+        raise SystemExit(f"offline backend {bid} needs --path or --fixture")
     if not args.token_file and bid != BackendIds.ETHERCALC:
         if not (args.base_url and args.room):
             raise SystemExit("--token-file required for live backends (or ethercalc --base-url/--room)")
@@ -167,33 +213,73 @@ def cmd_conformance(_args) -> int:
     return r.returncode
 
 
+def _endpoint_backend(cfg: dict, unit: dict, side: str):
+    """Resolve source/dest or a/b endpoint for offline push/merge."""
+    # unit-level endpoint object
+    ep = unit.get(side) or {}
+    if side == "source":
+        ep = unit.get("source") or unit.get("a") or ep
+    if side == "dest":
+        ep = unit.get("dest") or unit.get("b") or ep
+    if side == "a":
+        ep = unit.get("a") or unit.get("source") or ep
+    if side == "b":
+        ep = unit.get("b") or unit.get("dest") or ep
+    bid = (ep.get("backend") or "").strip()
+    path = ep.get("path")
+    if bid in (BackendIds.JSON_BOOK, BackendIds.CSV_DIR) or path:
+        return build_backend_from_spec(
+            {"backend": bid or BackendIds.JSON_BOOK, "path": path, "fixture": ep.get("fixture")},
+        )
+    # embedded books
+    if side in ("source", "a"):
+        book = cfg.get("source_book") or cfg.get("book_a") or cfg.get("a_book") or {"tabs": cfg.get("source_tabs") or cfg.get("a_tabs") or {}}
+    else:
+        book = cfg.get("dest_book") or cfg.get("book_b") or cfg.get("b_book") or {"tabs": cfg.get("dest_tabs") or cfg.get("b_tabs") or {}}
+    return MockBackend(book)
+
+
 def cmd_push(args) -> int:
-    """Directional push from JSON config using mock tables (no network)."""
+    """Directional push from JSON config (mock or file backends; no network)."""
     from .row_ops import push_table
 
     if not getattr(args, "config", None):
         raise SystemExit("push requires --config path.json")
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
-    # Optional embedded fixtures: { "source_book": {...}, "dest_book": {...}, "tables": [unit] }
-    # Or single unit with source/dest tables already in --fixture mock books via two fixtures.
     tables = cfg.get("tables") or ([cfg] if cfg.get("keys") else [])
     if not tables:
         raise SystemExit("config needs tables[] or a single table unit")
-    src_book = cfg.get("source_book") or {"tabs": cfg.get("source_tabs") or {}}
-    dest_book = cfg.get("dest_book") or {"tabs": cfg.get("dest_tabs") or {}}
-    if args.fixture and not src_book.get("tabs"):
-        src_book = json.loads(Path(args.fixture).read_text(encoding="utf-8"))
-    src_be = MockBackend(src_book)
-    dest_be = MockBackend(dest_book)
     results = []
+    dest_preview = None
     for unit in tables:
-        results.append(push_table(src_be, dest_be, unit))
-    print(json.dumps({"ok": True, "results": results, "dest": dest_be.read_rows(tables[0].get("dest", {}).get("table") or tables[0].get("dest", {}).get("tab") or "")}, indent=2))
+        # force replace-like full write for copy alias when requested
+        if getattr(args, "copy_mode", False):
+            unit = dict(unit)
+            unit.setdefault("direction", "push")
+        src_be = _endpoint_backend(cfg, unit, "source")
+        dest_be = _endpoint_backend(cfg, unit, "dest")
+        # normalize source/dest table keys for push_table
+        u = dict(unit)
+        if "source" not in u and "a" in u:
+            u["source"] = u["a"]
+        if "dest" not in u and "b" in u:
+            u["dest"] = u["b"]
+        results.append(push_table(src_be, dest_be, u))
+        tab = (u.get("dest") or {}).get("table") or (u.get("dest") or {}).get("tab") or ""
+        if tab:
+            dest_preview = dest_be.read_rows(tab)
+    print(json.dumps({"ok": True, "results": results, "dest": dest_preview}, indent=2))
     return 0
 
 
+def cmd_copy(args) -> int:
+    """Alias for push (offline copy/convert between endpoints)."""
+    args.copy_mode = True
+    return cmd_push(args)
+
+
 def cmd_merge(args) -> int:
-    """A↔B merge from JSON config using mock tables (no network)."""
+    """A↔B merge from JSON config (mock or file backends; no network)."""
     from .row_ops import merge_tables
 
     if not getattr(args, "config", None):
@@ -202,17 +288,10 @@ def cmd_merge(args) -> int:
     tables = cfg.get("tables") or ([cfg] if cfg.get("keys") else [])
     if not tables:
         raise SystemExit("config needs tables[] or a single merge unit")
-    book_a = cfg.get("book_a") or cfg.get("a_book") or {"tabs": cfg.get("a_tabs") or {}}
-    book_b = cfg.get("book_b") or cfg.get("b_book") or {"tabs": cfg.get("b_tabs") or {}}
-    # Also accept source_book/dest_book aliases
-    if not book_a.get("tabs") and cfg.get("source_book"):
-        book_a = cfg["source_book"]
-    if not book_b.get("tabs") and cfg.get("dest_book"):
-        book_b = cfg["dest_book"]
-    be_a = MockBackend(book_a)
-    be_b = MockBackend(book_b)
     results = []
     for unit in tables:
+        be_a = _endpoint_backend(cfg, unit, "a")
+        be_b = _endpoint_backend(cfg, unit, "b")
         results.append(merge_tables(be_a, be_b, unit))
     print(json.dumps({"ok": True, "results": results}, indent=2))
     return 0
@@ -244,7 +323,8 @@ def main(argv: list[str] | None = None) -> int:
         help="backend id (before or after subcommand)",
     )
     ap.add_argument("--token-file", default=None, help="JSON token file (live backends)")
-    ap.add_argument("--fixture", default=None, help="mock book JSON path")
+    ap.add_argument("--fixture", default=None, help="mock/local book JSON path")
+    ap.add_argument("--path", default=None, help="json-book file or csv-dir directory")
     ap.add_argument("--spreadsheet-id", default=None)
     ap.add_argument("--item-id", default=None, help="excel-graph workbook item id")
     ap.add_argument("--base-url", default=None, help="ethercalc base URL")
@@ -264,8 +344,9 @@ def main(argv: list[str] | None = None) -> int:
         "conformance",
         help="run offline conformance/harness.py (preferred agent test path)",
     )
-    sub.add_parser("push", help="directional push from --config JSON using mock backends")
-    sub.add_parser("merge", help="A↔B merge from --config JSON using mock backends")
+    sub.add_parser("push", help="directional push from --config JSON (mock/file backends)")
+    sub.add_parser("copy", help="alias of push for offline copy/convert")
+    sub.add_parser("merge", help="A↔B merge from --config JSON (mock/file backends)")
     sub.add_parser(
         "sheets-smoke",
         help="optional live google-sheets test-connection (token env/flags)",
@@ -278,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_conformance(args)
     if args.cmd == "push":
         return cmd_push(args)
+    if args.cmd == "copy":
+        return cmd_copy(args)
     if args.cmd == "merge":
         return cmd_merge(args)
     if args.cmd == "sheets-smoke":
