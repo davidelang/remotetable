@@ -29,3 +29,7 @@ M1 is API + three backends + conformance, not full A↔B merge.
 ## Out of M1
 
 CLI packaging, OnlyOffice/Collabora (see `TODO.md`), full format matrix.
+
+## Contract
+
+See **`CONTRACT.md`** for the versioned multi-consumer contract (schema_version 1).

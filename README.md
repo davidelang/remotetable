@@ -4,6 +4,12 @@
 
 Not VehicleExpenses-specific. VehicleExpenses will become a consumer after the library meets a conformance suite with **no loss of app functionality**.
 
+## Contract (schema_version 1)
+
+Normative multi-consumer contract: **`spec/CONTRACT.md`** (layers L0–L4, column_map, soft-delete/expunge, rate limits, readMany/writeMany, types, non-goals).
+
+CLI agents and app integrators share that one document. Conformance harness: `conformance/`.
+
 ## Status
 
 **SoT:** `~/git/remotetable` + `git@github.com:davidelang/remotetable.git`.  

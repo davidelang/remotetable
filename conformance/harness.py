@@ -124,8 +124,137 @@ def run_live_optional() -> None:
     print("PASS live smoke:", backend_id, "tabs=", len(tabs["tabs"]))
 
 
+
+
+def run_rate_limit_helpers() -> None:
+    from remotetable.rate_limit import is_rate_limit_error
+    assert_true(is_rate_limit_error("HTTP 429: quota exceeded"), "429 detect")
+    assert_true(is_rate_limit_error("RateLimitExceeded"), "RateLimitExceeded")
+    assert_true(is_rate_limit_error("read requests per minute"), "read rpm")
+    assert_true(not is_rate_limit_error("not found"), "non-429")
+    print("PASS rate_limit helpers")
+
+
+def run_l2_and_policy() -> None:
+    from remotetable.row_ops import push_table, propagate_soft_deletes
+
+    be = MockBackend(
+        {
+            "tabs": {
+                "Src": {
+                    "headers": ["Sync ID", "Name", "Updated At", "Deleted"],
+                    "rows": [
+                        ["a", "A", "100", ""],
+                        ["b", "B", "50", "true"],
+                        ["c", "C-new", "200", ""],
+                    ],
+                },
+                "Dst": {
+                    "headers": ["Sync ID", "Name", "Updated At", "Deleted"],
+                    "rows": [
+                        ["a", "A-old", "150", ""],
+                        ["b", "B", "50", ""],
+                    ],
+                },
+            }
+        }
+    )
+    rt = RemoteTable(be)
+
+    many = rt.read_many(["Src", "Dst"])
+    assert_true("Src" in many and "Dst" in many, "read_many keys")
+    assert_true(len(many["Src"]["rows"]) == 3, "read_many src")
+
+    u = rt.update_where("Dst", {"Sync ID": "a"}, {"Name": "A-set"})
+    assert_true(u["updated"] == 1, str(u))
+    assert_true(rt.read_rows("Dst")["rows"][0][1] == "A-set", "update_where")
+
+    sd = rt.soft_delete_where("Dst", {"Sync ID": "a"}, "Deleted")
+    assert_true(sd["updated"] == 1, str(sd))
+    assert_true(rt.read_rows("Dst")["rows"][0][3] == "true", "soft_delete")
+
+    # soft-delete propagate: source b tombstoned + dest has b → dest tombstone
+    src = {"headers": ["Sync ID", "Deleted"], "rows": [["b", "true"], ["z", "true"]]}
+    dst = {"headers": ["Sync ID", "Deleted"], "rows": [["b", ""], ["y", ""]]}
+    new_dst, n = propagate_soft_deletes(src, dst, ["Sync ID"], "Deleted")
+    assert_true(n == 1, f"propagate count {n}")
+    assert_true(new_dst["rows"][0][1] == "true", "b tombstoned")
+    assert_true(new_dst["rows"][1][1] == "", "y untouched; z no dest row")
+
+    # expunge removes key
+    be2 = MockBackend(
+        {"tabs": {"T": {"headers": ["Sync ID", "X"], "rows": [["1", "a"], ["2", "b"]]}}}
+    )
+    rt2 = RemoteTable(be2)
+    r = rt2.expunge_where("T", {"Sync ID": "1"})
+    assert_true(r["removed"] == 1, str(r))
+    assert_true(len(rt2.read_rows("T")["rows"]) == 1, "expunge size")
+    assert_true(rt2.read_rows("T")["rows"][0][0] == "2", "expunge remaining")
+
+    # push policy
+    src_be = MockBackend(
+        {
+            "tabs": {
+                "Local": {
+                    "headers": ["syncId", "updatedAt", "deleted", "name"],
+                    "rows": [
+                        ["k1", "100", "", "one"],
+                        ["k2", "200", "true", "two"],
+                        ["k3", "300", "", "three"],
+                    ],
+                }
+            }
+        }
+    )
+    dst_be = MockBackend(
+        {
+            "tabs": {
+                "Remote": {
+                    "headers": ["Sync ID", "Updated At", "Deleted", "Name"],
+                    "rows": [
+                        ["k1", "150", "", "one-old"],
+                        ["k2", "10", "", "two-old"],
+                    ],
+                }
+            }
+        }
+    )
+    unit = {
+        "id": "ex",
+        "direction": "push",
+        "source": {"table": "Local"},
+        "dest": {"table": "Remote"},
+        "columns": [
+            {"name": "Sync ID", "type": "string"},
+            {"name": "Updated At", "type": "timestamp"},
+            {"name": "Deleted", "type": "checkbox"},
+            {"name": "Name", "type": "string"},
+        ],
+        "column_map": {
+            "syncId": "Sync ID",
+            "updatedAt": "Updated At",
+            "deleted": "Deleted",
+            "name": "Name",
+        },
+        "keys": ["syncId"],
+        "timestamp": "updatedAt",
+        "tombstone": {"column": "deleted", "true_values": ["true", "1", "yes"]},
+    }
+    result = push_table(src_be, dst_be, unit)
+    remote = dst_be.read_rows("Remote")
+    by = {r[0]: r for r in remote["rows"]}
+    assert_true("k1" in by, "k1 present")
+    # k1 source older than dest → keep dest name (skipped)
+    assert_true(by["k1"][3] == "one-old", f"k1 not clobbered: {by['k1']}")
+    assert_true(by["k2"][2] == "true", f"k2 soft-deleted: {by['k2']}")
+    assert_true("k3" in by and by["k3"][3] == "three", f"k3 inserted: {by.get('k3')}")
+    print("PASS L2 + soft-delete + push policy", result)
+
+
 def main() -> int:
     run_mock()
+    run_rate_limit_helpers()
+    run_l2_and_policy()
     run_live_optional()
     print("backends_required:", ", ".join(BackendIds.LIVE))
     return 0

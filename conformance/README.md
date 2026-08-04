@@ -1,6 +1,8 @@
 # Conformance
 
-## Offline (required)
+**Contract:** see `../spec/CONTRACT.md` (schema_version 1) for layers, rate limits, soft-delete/expunge, and batch APIs. This harness validates mock ops and optional live smoke against that contract.
+
+Offline (required)
 
 ```bash
 python3 conformance/harness.py

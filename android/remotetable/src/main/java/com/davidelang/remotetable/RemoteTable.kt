@@ -3,8 +3,9 @@ package com.davidelang.remotetable
 import org.json.JSONObject
 
 /**
- * Provider-neutral remote table facade (M2).
- * Live backends use HttpURLConnection + JSON token/config (no Google/MS client libs).
+ * Provider-neutral remote table facade.
+ * L0 transport (rate limits) lives in backends; L1/L2 named ops on [Backend] defaults + overrides.
+ * See `spec/CONTRACT.md`.
  */
 class RemoteTable(private val backend: Backend) {
     val backendId: String get() = backend.backendId
@@ -26,7 +27,38 @@ class RemoteTable(private val backend: Backend) {
     fun renameTab(oldTitle: String, newTitle: String): Boolean = backend.renameTab(oldTitle, newTitle)
     fun deleteTab(tab: String) = backend.deleteTab(tab)
     fun clearFromRow(tab: String, startRow1Based: Int) = backend.clearFromRow(tab, startRow1Based)
+
+    /** L2: bulk read many tabs. */
+    fun readMany(tabs: List<String>): Map<String, TabData> = backend.readMany(tabs)
+
+    /** L2: write many tabs (replace or append per entry). */
+    fun writeMany(
+        updates: Map<String, TabWrite>,
+        mode: String = "replace",
+    ): Int = backend.writeMany(updates, mode)
+
+    /** Point update of contiguous rows (1-based sheet row; 1 = header). */
+    fun updateRangeRows(tab: String, startRow1Based: Int, rows: List<List<String>>): Int =
+        backend.updateRangeRows(tab, startRow1Based, rows)
+
+    /** AND-equality filter → set named fields. Returns rows updated. */
+    fun updateWhere(tab: String, filter: Map<String, String>, setFields: Map<String, String>): Int =
+        backend.updateWhere(tab, filter, setFields)
+
+    /** Soft-delete: flag-only tombstone on matching rows. */
+    fun softDeleteWhere(
+        tab: String,
+        filter: Map<String, String>,
+        tombstoneColumn: String,
+        trueValue: String = "true",
+    ): Int = backend.softDeleteWhere(tab, filter, tombstoneColumn, trueValue)
+
+    /** Expunge: remove rows so keys are absent. */
+    fun expungeWhere(tab: String, filter: Map<String, String>): Int =
+        backend.expungeWhere(tab, filter)
 }
+
+data class TabWrite(val headers: List<String>, val rows: List<List<String>>)
 
 data class TabData(val headers: List<String>, val rows: List<List<String>>) {
     /** Header + data as sheet grid. */
@@ -50,6 +82,73 @@ interface Backend {
         if (data.headers.isEmpty() && data.rows.isEmpty()) return
         val keep = (startRow1Based - 2).coerceAtLeast(0)
         writeRows(tab, data.headers, data.rows.take(keep), mode = "replace")
+    }
+
+    /** Bulk read; default sequential. Sheets overrides with batchGet. */
+    fun readMany(tabs: List<String>): Map<String, TabData> {
+        val names = tabs.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (names.isEmpty()) return emptyMap()
+        return names.associateWith { readRows(it) }
+    }
+
+    fun writeMany(updates: Map<String, TabWrite>, mode: String = "replace"): Int {
+        var n = 0
+        for ((tab, tw) in updates) {
+            n += writeRows(tab, tw.headers, tw.rows, mode)
+        }
+        return n
+    }
+
+    fun updateRangeRows(tab: String, startRow1Based: Int, rows: List<List<String>>): Int {
+        if (rows.isEmpty()) return 0
+        val data = readRows(tab)
+        val headers = data.headers
+        val all = data.rows.toMutableList()
+        val zeroBased = (startRow1Based - 2).coerceAtLeast(0)
+        rows.forEachIndexed { i, row ->
+            val idx = zeroBased + i
+            if (idx < all.size) all[idx] = row
+            else {
+                while (all.size < idx) all.add(emptyList())
+                all.add(row)
+            }
+        }
+        writeRows(tab, headers.ifEmpty { rows.first() }, all, mode = "replace")
+        return rows.size
+    }
+
+    fun updateWhere(tab: String, filter: Map<String, String>, setFields: Map<String, String>): Int {
+        if (filter.isEmpty() || setFields.isEmpty()) return 0
+        val data = readRows(tab)
+        if (data.headers.isEmpty()) return 0
+        val idx = RowOps.headerIndex(data.headers)
+        var n = 0
+        val newRows = data.rows.map { row ->
+            if (RowOps.matchesFilter(row, idx, filter)) {
+                n++
+                RowOps.applySet(row, data.headers, setFields)
+            } else row
+        }
+        if (n > 0) writeRows(tab, data.headers, newRows, mode = "replace")
+        return n
+    }
+
+    fun softDeleteWhere(
+        tab: String,
+        filter: Map<String, String>,
+        tombstoneColumn: String,
+        trueValue: String = "true",
+    ): Int = updateWhere(tab, filter, mapOf(tombstoneColumn to trueValue))
+
+    fun expungeWhere(tab: String, filter: Map<String, String>): Int {
+        if (filter.isEmpty()) return 0
+        val data = readRows(tab)
+        if (data.headers.isEmpty()) return 0
+        val idx = RowOps.headerIndex(data.headers)
+        val kept = data.rows.filterNot { RowOps.matchesFilter(it, idx, filter) }
+        val removed = data.rows.size - kept.size
+        if (removed > 0) writeRows(tab, data.headers, kept, mode = "replace")
+        return removed
     }
 }
 
@@ -75,8 +174,12 @@ object BackendIds {
 object Backends {
     fun mock(initial: Map<String, TabData> = emptyMap()): Backend = MockBackend(initial)
 
-    fun googleSheets(accessToken: String, spreadsheetId: String): Backend =
-        GoogleSheetsBackend(accessToken, spreadsheetId)
+    fun googleSheets(
+        accessToken: String,
+        spreadsheetId: String,
+        rateLimitConfig: RateLimitConfig = RateLimitRegistry.defaultFor(BackendIds.GOOGLE_SHEETS),
+        progress: RateLimitProgress? = null,
+    ): Backend = GoogleSheetsBackend(accessToken, spreadsheetId, rateLimitConfig, progress)
 
     fun excelGraph(accessToken: String, itemId: String, driveId: String? = null): Backend =
         ExcelGraphBackend(accessToken, itemId, driveId)
@@ -186,7 +289,6 @@ object Backends {
         }
     }
 }
-
 
 class MockBackend(initial: Map<String, TabData> = emptyMap()) : Backend {
     override val backendId: String = BackendIds.MOCK
