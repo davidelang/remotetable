@@ -294,11 +294,84 @@ def run_type_coerce() -> None:
     print("PASS type coerce on push")
 
 
+def run_merge_suite() -> None:
+    from remotetable.row_ops import merge_tab_data, merge_tables
+
+    headers = ["Sync ID", "Updated At", "Notes", "Deleted"]
+    a = {
+        "headers": headers,
+        "rows": [
+            ["k1", "100", "from-a", ""],
+            ["k2", "200", "a-only", ""],
+            ["k3", "50", "old-a", ""],
+            ["k4", "300", "live-a", ""],
+            ["k6", "100", "tie-a", ""],
+        ],
+    }
+    b = {
+        "headers": headers,
+        "rows": [
+            ["k1", "150", "from-b", ""],
+            ["k3", "80", "", ""],
+            ["k4", "400", "x", "true"],
+            ["k5", "10", "b-only", ""],
+            ["k6", "100", "tie-b", ""],
+        ],
+    }
+    base_unit = {
+        "keys": ["Sync ID"],
+        "timestamp": "Updated At",
+        "columns": [
+            {"name": "Sync ID", "type": "string"},
+            {"name": "Updated At", "type": "timestamp"},
+            {"name": "Notes", "type": "string"},
+            {"name": "Deleted", "type": "checkbox"},
+        ],
+        "tombstone": {"column": "Deleted", "true_values": ["true", "1", "yes"]},
+    }
+
+    for mode in ("union", "lww_row"):
+        unit = {**base_unit, "merge_mode": mode}
+        m = merge_tab_data(a, b, unit)
+        by = {r[0]: r for r in m["rows"]}
+        assert_true(set(by) == {"k1", "k2", "k3", "k4", "k5", "k6"}, f"{mode} keys {set(by)}")
+        assert_true(by["k1"][2] == "from-b", f"{mode} k1 lww notes {by['k1']}")
+        assert_true(by["k2"][2] == "a-only", f"{mode} k2")
+        assert_true(by["k5"][2] == "b-only", f"{mode} k5")
+        assert_true(by["k6"][2] == "tie-a", f"{mode} tie prefer a {by['k6']}")
+        assert_true(by["k4"][3] == "true", f"{mode} k4 tombstone {by['k4']}")
+
+    unit_ff = {**base_unit, "merge_mode": "field_fill"}
+    m = merge_tab_data(a, b, unit_ff)
+    by = {r[0]: r for r in m["rows"]}
+    assert_true(by["k3"][2] == "old-a", f"field_fill k3 notes {by['k3']}")
+    assert_true(by["k1"][2] == "from-b", f"field_fill k1 winner notes {by['k1']}")
+    assert_true(by["k4"][3] == "true", f"field_fill k4 tomb {by['k4']}")
+
+    be_a = MockBackend({"tabs": {"A": a}})
+    be_b = MockBackend({"tabs": {"B": b}})
+    res = merge_tables(
+        be_a,
+        be_b,
+        {
+            **base_unit,
+            "merge_mode": "lww_row",
+            "write_target": "b",
+            "a": {"table": "A"},
+            "b": {"table": "B"},
+        },
+    )
+    assert_true(res["written"] is True, str(res))
+    assert_true(len(be_b.read_rows("B")["rows"]) == 6, "write b count")
+    print("PASS merge suite (union/lww_row/field_fill/tombstone/tie/write)")
+
+
 def main() -> int:
     run_mock()
     run_rate_limit_helpers()
     run_l2_and_policy()
     run_type_coerce()
+    run_merge_suite()
     run_live_optional()
     print("backends_required:", ", ".join(BackendIds.LIVE))
     return 0

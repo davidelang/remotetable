@@ -23,7 +23,16 @@ from . import (
     ZohoSheetBackend,
 )
 
-COMMANDS = ("test-connection", "list-tabs", "read-rows", "write-rows", "conformance", "push", "sheets-smoke")
+COMMANDS = (
+    "test-connection",
+    "list-tabs",
+    "read-rows",
+    "write-rows",
+    "conformance",
+    "push",
+    "merge",
+    "sheets-smoke",
+)
 # Flags that take a value (global)
 GLOBAL_VALUE_FLAGS = {
     "--backend",
@@ -183,6 +192,32 @@ def cmd_push(args) -> int:
     return 0
 
 
+def cmd_merge(args) -> int:
+    """A↔B merge from JSON config using mock tables (no network)."""
+    from .row_ops import merge_tables
+
+    if not getattr(args, "config", None):
+        raise SystemExit("merge requires --config path.json")
+    cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    tables = cfg.get("tables") or ([cfg] if cfg.get("keys") else [])
+    if not tables:
+        raise SystemExit("config needs tables[] or a single merge unit")
+    book_a = cfg.get("book_a") or cfg.get("a_book") or {"tabs": cfg.get("a_tabs") or {}}
+    book_b = cfg.get("book_b") or cfg.get("b_book") or {"tabs": cfg.get("b_tabs") or {}}
+    # Also accept source_book/dest_book aliases
+    if not book_a.get("tabs") and cfg.get("source_book"):
+        book_a = cfg["source_book"]
+    if not book_b.get("tabs") and cfg.get("dest_book"):
+        book_b = cfg["dest_book"]
+    be_a = MockBackend(book_a)
+    be_b = MockBackend(book_b)
+    results = []
+    for unit in tables:
+        results.append(merge_tables(be_a, be_b, unit))
+    print(json.dumps({"ok": True, "results": results}, indent=2))
+    return 0
+
+
 def cmd_sheets_smoke(args) -> int:
     """Optional live google-sheets test-connection (env or flags)."""
     import os
@@ -230,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
         help="run offline conformance/harness.py (preferred agent test path)",
     )
     sub.add_parser("push", help="directional push from --config JSON using mock backends")
+    sub.add_parser("merge", help="A↔B merge from --config JSON using mock backends")
     sub.add_parser(
         "sheets-smoke",
         help="optional live google-sheets test-connection (token env/flags)",
@@ -242,6 +278,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_conformance(args)
     if args.cmd == "push":
         return cmd_push(args)
+    if args.cmd == "merge":
+        return cmd_merge(args)
     if args.cmd == "sheets-smoke":
         return cmd_sheets_smoke(args)
 

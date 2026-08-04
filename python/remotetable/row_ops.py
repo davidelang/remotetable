@@ -219,3 +219,169 @@ def push_table(
 
     dest_backend.write_rows(dest_tab, headers, rows, mode="replace")
     return {"written": written, "soft_deleted": soft_deleted, "skipped_older": skipped_older}
+
+
+def parse_ts(raw: str) -> int:
+    t = (raw or "").strip()
+    if not t:
+        return 0
+    if t.isdigit():
+        return int(t)
+    digits = "".join(c for c in t if c.isdigit())[:13]
+    return int(digits) if digits else 0
+
+
+def _compare_ts(row_a: Sequence[str], row_b: Sequence[str], logical: Sequence[str], timestamp: str | None) -> int:
+    """>0 a newer, <0 b newer, 0 equal (prefer a)."""
+    if not timestamp:
+        return 0
+    idx = header_index(logical)
+    ta = parse_ts(cell(row_a, idx, timestamp))
+    tb = parse_ts(cell(row_b, idx, timestamp))
+    if ta == 0 and tb == 0:
+        return 0
+    if ta == 0:
+        return -1
+    if tb == 0:
+        return 1
+    if ta > tb:
+        return 1
+    if ta < tb:
+        return -1
+    return 0
+
+
+def _index_logical(
+    data: Mapping[str, Any],
+    logical: Sequence[str],
+    column_map: Mapping[str, str],
+    columns: Sequence,
+    keys: Sequence[str],
+) -> Dict[str, List[str]]:
+    out: Dict[str, List[str]] = {}
+    headers = list(data.get("headers") or [])
+    idx = header_index(logical)
+    for row in data.get("rows") or []:
+        mapped = coerce_row(
+            logical,
+            map_row(headers, row, logical, column_map or {}),
+            list(columns) if columns else [],
+        )
+        key = "\x01".join(cell(mapped, idx, k) for k in keys)
+        if not key or key in out:
+            continue
+        out[key] = mapped
+    return out
+
+
+def _pick_full(
+    row_a: List[str] | None,
+    row_b: List[str] | None,
+    logical: Sequence[str],
+    timestamp: str | None,
+) -> List[str]:
+    if row_a is None and row_b is None:
+        return [""] * len(logical)
+    if row_a is None:
+        return list(row_b or [])
+    if row_b is None:
+        return list(row_a)
+    return list(row_a if _compare_ts(row_a, row_b, logical, timestamp) >= 0 else row_b)
+
+
+def _field_fill(
+    row_a: List[str] | None,
+    row_b: List[str] | None,
+    logical: Sequence[str],
+    timestamp: str | None,
+) -> List[str]:
+    if row_a is None and row_b is None:
+        return [""] * len(logical)
+    if row_a is None:
+        return list(row_b or [])
+    if row_b is None:
+        return list(row_a)
+    winner_a = _compare_ts(row_a, row_b, logical, timestamp) >= 0
+    winner = list(row_a if winner_a else row_b)
+    loser = list(row_b if winner_a else row_a)
+    while len(winner) < len(logical):
+        winner.append("")
+    for i in range(len(logical)):
+        w = winner[i] if i < len(winner) else ""
+        l = loser[i] if i < len(loser) else ""
+        if not str(w).strip() and str(l).strip():
+            winner[i] = l
+    return winner
+
+
+def merge_tab_data(
+    a: Mapping[str, Any],
+    b: Mapping[str, Any],
+    unit: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Pure A↔B merge: union | lww_row | field_fill (CONTRACT)."""
+    keys = list(unit.get("keys") or [])
+    if not keys:
+        raise ValueError("keys required")
+    columns = unit.get("columns") or []
+    logical = [c["name"] if isinstance(c, dict) else str(c) for c in columns]
+    map_a = dict(unit.get("column_map_a") or unit.get("column_map") or {})
+    map_b = dict(unit.get("column_map_b") or {})
+    if not logical:
+        ha = [map_a.get(h, h) for h in (a.get("headers") or [])]
+        hb = [map_b.get(h, h) for h in (b.get("headers") or [])]
+        logical = list(dict.fromkeys(ha + hb))
+    timestamp = unit.get("timestamp")
+    mode = (unit.get("merge_mode") or "lww_row").strip().lower().replace("-", "_")
+    if mode in ("lww",):
+        mode = "lww_row"
+    if mode in ("fill",):
+        mode = "field_fill"
+
+    idx_a = _index_logical(a, logical, map_a, columns, keys)
+    idx_b = _index_logical(b, logical, map_b, columns, keys)
+    all_keys = list(dict.fromkeys(list(idx_a.keys()) + list(idx_b.keys())))
+    rows: List[List[str]] = []
+    for key in all_keys:
+        ra, rb = idx_a.get(key), idx_b.get(key)
+        if mode == "field_fill":
+            merged = _field_fill(ra, rb, logical, timestamp)
+        else:
+            # union and lww_row: full-row pick
+            merged = _pick_full(ra, rb, logical, timestamp)
+        rows.append(coerce_row(logical, merged, columns if isinstance(columns, list) else []))
+    return {"headers": list(logical), "rows": rows}
+
+
+def merge_tables(
+    backend_a: Any,
+    backend_b: Any,
+    unit: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Read a/b, merge, optional write_target a|b|none."""
+    tab_a = (unit.get("a") or {}).get("table") or (unit.get("a") or {}).get("tab")
+    tab_b = (unit.get("b") or {}).get("table") or (unit.get("b") or {}).get("tab")
+    if not tab_a or not tab_b:
+        # legacy
+        tab_a = tab_a or (unit.get("source") or {}).get("table")
+        tab_b = tab_b or (unit.get("dest") or {}).get("table")
+    data_a = backend_a.read_rows(tab_a)
+    data_b = backend_b.read_rows(tab_b)
+    merged = merge_tab_data(data_a, data_b, unit)
+    write_target = (unit.get("write_target") or "none").strip().lower()
+    written = False
+    if write_target == "a":
+        backend_a.ensure_headers(tab_a, merged["headers"])
+        backend_a.write_rows(tab_a, merged["headers"], merged["rows"], mode="replace")
+        written = True
+    elif write_target == "b":
+        backend_b.ensure_headers(tab_b, merged["headers"])
+        backend_b.write_rows(tab_b, merged["headers"], merged["rows"], mode="replace")
+        written = True
+    return {
+        "id": unit.get("id", "merge"),
+        "mode": unit.get("merge_mode", "lww_row"),
+        "row_count": len(merged["rows"]),
+        "written": written,
+        "merged": merged,
+    }

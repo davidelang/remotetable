@@ -4,9 +4,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * L3 directional policy MVP (schema_version 1).
+ * L3 directional policy (schema_version 1).
  * JSON-driven **push** (A→B): keys + timestamp don't-clobber; column_map; soft-delete propagate.
- * Full A↔B merge is out of foundation scope.
+ * A↔B merge: see [MergeSync] (`direction: "merge"`).
  */
 data class ColumnDef(val name: String, val type: String = "string")
 
@@ -85,7 +85,9 @@ object PolicySync {
      * - insert missing keys; update when source timestamp >= dest (when configured)
      */
     fun push(source: Backend, dest: Backend, unit: TableSyncUnit): PushResult {
-        require(unit.direction == "push") { "only direction=push in foundation MVP" }
+        require(unit.direction == "push" || unit.direction.isBlank()) {
+            "push requires direction=push (got ${unit.direction}); use MergeSync for merge"
+        }
         require(unit.keys.isNotEmpty()) { "keys required" }
         val srcData = source.readRows(unit.sourceTable)
         val destHeaderNames = if (unit.columns.isNotEmpty()) {

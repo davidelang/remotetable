@@ -1,0 +1,47 @@
+{
+  "book_a": {
+    "tabs": {
+      "A": {
+        "headers": ["Sync ID", "Updated At", "Notes", "Deleted"],
+        "rows": [
+          ["k1", "100", "from-a", ""],
+          ["k2", "200", "a-only", ""],
+          ["k3", "50", "old-a", ""],
+          ["k4", "300", "live-a", ""]
+        ]
+      }
+    }
+  },
+  "book_b": {
+    "tabs": {
+      "B": {
+        "headers": ["Sync ID", "Updated At", "Notes", "Deleted"],
+        "rows": [
+          ["k1", "150", "from-b", ""],
+          ["k3", "80", "", ""],
+          ["k4", "400", "x", "true"],
+          ["k5", "10", "b-only", ""]
+        ]
+      }
+    }
+  },
+  "tables": [
+    {
+      "id": "demo-field-fill",
+      "direction": "merge",
+      "merge_mode": "field_fill",
+      "write_target": "none",
+      "a": { "table": "A" },
+      "b": { "table": "B" },
+      "columns": [
+        { "name": "Sync ID", "type": "string" },
+        { "name": "Updated At", "type": "timestamp" },
+        { "name": "Notes", "type": "string" },
+        { "name": "Deleted", "type": "checkbox" }
+      ],
+      "keys": ["Sync ID"],
+      "timestamp": "Updated At",
+      "tombstone": { "column": "Deleted", "true_values": ["true", "1", "yes"] }
+    }
+  ]
+}

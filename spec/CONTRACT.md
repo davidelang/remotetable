@@ -15,7 +15,7 @@ This document is the shared product contract. Implementation languages (Kotlin A
 | **L0** | Transport | Per-backend HTTP/SQL/file I/O; **baked-in rate limit** (config expected rates + 429/retry); efficient provider ops |
 | **L1** | Grid / table | Tabs ≈ tables; headers; rows as **named** columns; create-time **column order**; types coerce |
 | **L2** | Row ops | Filter (AND equality) → set fields; soft-delete flag; **expunge**; **readMany / writeMany** |
-| **L3** | Policy / sync | Directional push/pull; keys + timestamp; column_map; later A↔B (union → LWW → field fill) |
+| **L3** | Policy / sync | Directional push/pull; keys + timestamp; column_map; **A↔B merge** (`union` / `lww_row` / `field_fill`) |
 | **L4** | App / CLI | Which endpoints, product-only steps, UI, scheduling |
 
 Field **meaning** stays out of the library; **mechanics** (key column names, timestamp column, tombstone column names) are config.
@@ -146,11 +146,12 @@ AND of field **equalities** only. `IN` / `is_empty` later.
 
 ---
 
-## Explicit non-goals (foundation)
+## Explicit non-goals (this contract layer)
 
 - Room / internal DB backend as L0 endpoint (later)
-- Full A↔B merge engine (union / LWW / field-fill) — specified for later, not foundation complete
-- VE fuel domain field-merge or trip-type product rules
+- VE fuel domain field-merge or trip-type product rules (app L4)
+- Field-level timestamps (row ts only for fill conflicts)
+- Automatic expunge during merge
 - Device green (e.g. emulator multi-tab 429 recovery) as definition of L0/L1 success — that is a later integrate gate
 
 ---
@@ -200,6 +201,76 @@ Every Kotlin HTTP backend that performs network I/O uses a non-null `RateLimiter
 
 ---
 
+
+
+---
+
+## L3 A↔B merge (`direction: "merge"`)
+
+Config names two endpoints **`a`** and **`b`** (not source/dest only). Result schema is ordered **`columns`** (logical names). Optional `column_map_a` / `column_map_b` map each side’s physical names → logical (`source → logical`). Empty map = identity.
+
+| `merge_mode` | Behavior |
+|--------------|----------|
+| **`union`** | Result keys = A ∪ B. For each key, pick **one full row** (no field-level mix). Winner by timestamp if configured; **equal ts or missing ts → prefer a**. |
+| **`lww_row`** | Per key: full row from side with **newer** row timestamp; missing ts → other side wins if it has a row; equal ts → **prefer a**. |
+| **`field_fill`** | Start from `lww_row` winner; for each field, if winner cell empty and loser non-empty → take loser; if both non-empty → keep winner (row-ts side). |
+
+### Soft-delete + LWW
+
+- Tombstone is **flag only** (no expunge).
+- If the **winning** row (by ts / tie-break) is tombstoned → result row is tombstoned.
+- **Newer tombstone wins over older live** (do not resurrect older live over newer tombstone).
+- Merge never creates expunge; never invents a tombstone-only row for a key that exists only as soft-delete on one side without including that key in the union (union **does** include keys present only on one side, including tombstoned-only keys).
+
+### `write_target`
+
+| Value | Effect |
+|-------|--------|
+| `"a"` | Write merged grid to endpoint **a**’s table (replace) |
+| `"b"` | Write to **b** (CLI default when writing) |
+| `"none"` | Compute only (tests / dry-run); return structure without write |
+
+### JSON sketch
+
+```json
+{
+  "schema_version": 1,
+  "tables": [{
+    "id": "example-merge",
+    "direction": "merge",
+    "merge_mode": "field_fill",
+    "write_target": "b",
+    "a": { "table": "FuelA" },
+    "b": { "table": "FuelB" },
+    "columns": [
+      { "name": "Sync ID", "type": "string" },
+      { "name": "Updated At", "type": "timestamp" },
+      { "name": "Notes", "type": "string" },
+      { "name": "Deleted", "type": "checkbox" }
+    ],
+    "column_map_a": {},
+    "column_map_b": {},
+    "keys": ["Sync ID"],
+    "timestamp": "Updated At",
+    "tombstone": { "column": "Deleted", "true_values": ["true", "1", "yes"] }
+  }]
+}
+```
+
+Push (`direction: "push"`) remains unchanged and additive.
+
+### Materialize (coders)
+
+Edit under existing `third_party/remotetable/src/` when present. Re-run `./third_party/fetch-deps rw remotetable` **only if** `src/` is missing, wrong pin, or read-only.
+
+### Testing merge
+
+```bash
+python3 conformance/harness.py
+scripts/remotetable merge --config conformance/fixtures/merge_mock_config.json
+```
+
+
 ## Testing (CLI / harness)
 
 **Preferred agent/dev test path** (no VE device required):
@@ -211,6 +282,7 @@ python3 conformance/harness.py
 scripts/remotetable conformance
 # mock directional push:
 scripts/remotetable push --config path/to/push-config.json
+scripts/remotetable merge --config path/to/merge-config.json
 ```
 
 Optional live smoke: `scripts/remotetable sheets-smoke --token-file …` (or `REMOTETABLE_TOKEN_FILE`).
