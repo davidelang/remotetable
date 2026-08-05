@@ -42,6 +42,17 @@ REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/room_export_to_ethercalc_smoke
 
 See parent `conformance/README.md` § Room Vehicles → json-book → EtherCalc.
 
+### Room Fuel multi-tab → multi-room EtherCalc
+
+Each `Fuel - *` tab in `fixtures/room_fuel_export.json` is pushed to a **unique room**
+(slug + run id). Offline multi-tab json-book always PASS; EtherCalc SKIP without env.
+
+```bash
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/room_fuel_export_smoke.py
+```
+
+See parent `conformance/README.md` § Room Fuel multi-tab.
+
 Optional overrides:
 
 ```bash

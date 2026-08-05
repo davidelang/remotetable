@@ -122,11 +122,23 @@ VE producer: `app/.../RoomVehiclesBackend.exportJsonBook`. Production Sheets pat
 |------|--------|----------|
 | Golden multi-tab fuel | `fixtures/room_fuel_export.json` (= VE `RoomFuelBackend.exportJsonBook`) | Always |
 | json-book round-trip | ≥2 `Fuel - *` tabs, Sync ID + Notes | Always |
-| One-tab EtherCalc push | first fuel tab | Opt-in |
+| Multi-room EtherCalc push | **each** fuel tab → unique room (`ve-fuel-{slug}-{run}`) | Opt-in |
+
+EtherCalc model: **one room ≈ one grid**. Multi-tab export maps each `Fuel - {name}` to its own room.
 
 ```bash
+# offline only (also in harness.py)
 python3 conformance/room_fuel_export_smoke.py
+
+# multi-tab EtherCalc (all fuel tabs in fixture)
+conformance/ethercalc/up.sh
 REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/room_fuel_export_smoke.py
+conformance/ethercalc/down.sh
+
+# optional app-exported book
+ROOM_FUEL_JSONBOOK=/path/to/fuel_book.json \
+  REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/room_fuel_export_smoke.py
 ```
 
 VE: `app/.../RoomFuelBackend.kt` (read-only default; not registered as Sheets dest).
+Thin pointer: `scripts/room-fuel-export-smoke.sh`.
