@@ -87,3 +87,31 @@ conformance/ethercalc/down.sh
 
 Default offline `python3 conformance/harness.py` does **not** require docker (smoke SKIP).
 See `conformance/ethercalc/README.md`.
+
+## Room Vehicles → json-book → EtherCalc (e2e pilot)
+
+Validates the multi-backend story **without Google Sheets**:
+
+| Step | Source | Offline? |
+|------|--------|----------|
+| Golden export shape | `fixtures/room_vehicles_export.json` (= VE `RoomVehiclesBackend.exportJsonBook`) | Always |
+| json-book round-trip | `JsonBookBackend` | Always (harness) |
+| Push + read-back | local EtherCalc room | Opt-in |
+
+```bash
+# offline only (part of harness.py)
+python3 conformance/room_export_to_ethercalc_smoke.py
+
+# with local EtherCalc
+conformance/ethercalc/up.sh
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/room_export_to_ethercalc_smoke.py
+# or full harness
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/harness.py
+conformance/ethercalc/down.sh
+
+# optional: app-exported book
+ROOM_EXPORT_JSONBOOK=/path/to/vehicles.json \
+  REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/room_export_to_ethercalc_smoke.py
+```
+
+VE producer: `app/.../RoomVehiclesBackend.exportJsonBook`. Production Sheets path untouched.

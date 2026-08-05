@@ -594,6 +594,21 @@ def run_ethercalc_local_optional() -> None:
         raise SystemExit(r.returncode)
 
 
+def run_room_export_ethercalc_smoke() -> None:
+    """
+    Room Vehicles export golden → json-book (always) → EtherCalc if env set.
+    Offline half must PASS without docker.
+    """
+    import subprocess
+    smoke = ROOT / "conformance" / "room_export_to_ethercalc_smoke.py"
+    if not smoke.is_file():
+        print("SKIP room→ethercalc smoke (module missing)")
+        return
+    r = subprocess.run([sys.executable, str(smoke)], cwd=str(ROOT))
+    if r.returncode != 0:
+        raise SystemExit(r.returncode)
+
+
 def main() -> int:
     run_mock()
     run_header_three_cases()
@@ -603,6 +618,7 @@ def main() -> int:
     run_type_coerce()
     run_merge_suite()
     run_offline_file_backends()
+    run_room_export_ethercalc_smoke()
     run_live_optional()
     run_ethercalc_local_optional()
     print("backends_required:", ", ".join(BackendIds.LIVE))

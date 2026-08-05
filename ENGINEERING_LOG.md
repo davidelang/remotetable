@@ -57,3 +57,10 @@ Append-only activity log for this subproject.
 - Python parity + harness PASS offline; CONTRACT Filter language v1.1
 - Commit 3a83e57; AAR promote for VE pin
 
+
+## 2026-08-05 - room→ethercalc e2e validation CODE LANDED
+
+- room_export_to_ethercalc_smoke.py + fixtures/room_vehicles_export.json
+- Offline json-book PASS; EtherCalc e2e PASS with up.sh
+- Harness wires offline half always; EtherCalc SKIP without env
+

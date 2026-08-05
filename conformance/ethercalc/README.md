@@ -31,6 +31,17 @@ REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/harness.py
 
 Without docker / server down: smoke **SKIP**s; offline harness still **PASS**.
 
+### Room Vehicles → EtherCalc e2e
+
+Golden json-book (`fixtures/room_vehicles_export.json`, same shape as VE
+`RoomVehiclesBackend.exportJsonBook`) always validated offline. With server:
+
+```bash
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/room_export_to_ethercalc_smoke.py
+```
+
+See parent `conformance/README.md` § Room Vehicles → json-book → EtherCalc.
+
 Optional overrides:
 
 ```bash
