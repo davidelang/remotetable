@@ -41,11 +41,14 @@ class RemoteTable(private val backend: Backend) {
     fun updateRangeRows(tab: String, startRow1Based: Int, rows: List<List<String>>): Int =
         backend.updateRangeRows(tab, startRow1Based, rows)
 
-    /** AND-equality filter → set named fields. Returns rows updated. */
+    /**
+     * Filter (v1.1: equality / `in:` / `is_empty:`) → set named fields.
+     * Returns rows updated. See [RowOps.matchesFilter].
+     */
     fun updateWhere(tab: String, filter: Map<String, String>, setFields: Map<String, String>): Int =
         backend.updateWhere(tab, filter, setFields)
 
-    /** Soft-delete: flag-only tombstone on matching rows. */
+    /** Soft-delete: flag-only tombstone on matching rows (same filter language). */
     fun softDeleteWhere(
         tab: String,
         filter: Map<String, String>,
@@ -53,7 +56,7 @@ class RemoteTable(private val backend: Backend) {
         trueValue: String = "true",
     ): Int = backend.softDeleteWhere(tab, filter, tombstoneColumn, trueValue)
 
-    /** Expunge: remove rows so keys are absent. */
+    /** Expunge: remove rows so keys are absent (same filter language). */
     fun expungeWhere(tab: String, filter: Map<String, String>): Int =
         backend.expungeWhere(tab, filter)
 

@@ -1,8 +1,8 @@
 package com.davidelang.remotetable
 
 /**
- * L1/L2 helpers: named columns, AND-equality filter, soft-delete, expunge defaults.
- * See `spec/CONTRACT.md`.
+ * L1/L2 helpers: named columns, AND filter (equality + value prefixes), soft-delete, expunge.
+ * See `spec/CONTRACT.md` Filter language v1.1.
  */
 object RowOps {
     fun headerIndex(headers: List<String>): Map<String, Int> =
@@ -13,13 +13,42 @@ object RowOps {
         return row.getOrElse(i) { "" }
     }
 
+    /**
+     * AND of per-field predicates (filter language v1.1).
+     *
+     * Value syntax (string map, CLI/JSON friendly):
+     * - `"foo"` — equality (unchanged)
+     * - `"in:a,b,c"` — field ∈ {a,b,c}; empty member list matches nothing
+     * - `"empty:"` / `"is_empty:"` — cell blank after trim
+     * - `"not_empty:"` — cell non-blank after trim
+     *
+     * Commas inside `in:` members are not escaped in v1.1.
+     */
     fun matchesFilter(row: List<String>, idx: Map<String, Int>, filter: Map<String, String>): Boolean {
         if (filter.isEmpty()) return false
         for ((k, v) in filter) {
-            if (cell(row, idx, k) != v) return false
+            if (!matchesPredicate(cell(row, idx, k), v)) return false
         }
         return true
     }
+
+    /** Single-field predicate against [raw] cell value. */
+    fun matchesPredicate(raw: String, predicate: String): Boolean {
+        when (predicate) {
+            "empty:", "is_empty:" -> return raw.trim().isEmpty()
+            "not_empty:" -> return raw.trim().isNotEmpty()
+        }
+        if (predicate.startsWith("in:")) {
+            val members = parseInMembers(predicate.removePrefix("in:"))
+            if (members.isEmpty()) return false
+            return raw in members
+        }
+        return raw == predicate
+    }
+
+    /** Split `in:` tail on commas; trim; drop empty members. */
+    fun parseInMembers(csv: String): List<String> =
+        csv.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
     fun applySet(row: List<String>, headers: List<String>, setFields: Map<String, String>): List<String> {
         val out = row.toMutableList()

@@ -49,3 +49,11 @@ Append-only activity log for this subproject.
 - conformance/cli_flag_order_smoke.sh; conformance/README live copy-paste
 
 ## 2026-08-03 - PR prepared: sandbox/PRs/PR-email-connection.md (rebase onto master; tests OK)
+
+## 2026-08-05 - filter language v1.1 CODE LANDED
+
+- Plan (VE sandbox): remotetable-richer-filters-in-isempty-20260805-0033-plan.md
+- RowOps/matchesFilter: in: / empty: / is_empty: / not_empty:; equality unchanged
+- Python parity + harness PASS offline; CONTRACT Filter language v1.1
+- Commit 3a83e57; AAR promote for VE pin
+

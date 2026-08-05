@@ -21,11 +21,38 @@ def cell(row: Sequence[str], idx: Mapping[str, int], name: str) -> str:
     return str(row[i])
 
 
+def parse_in_members(csv: str) -> List[str]:
+    """Split `in:` tail on commas; trim; drop empty members."""
+    return [p.strip() for p in (csv or "").split(",") if p.strip()]
+
+
+def matches_predicate(raw: str, predicate: str) -> bool:
+    """
+    Single-field predicate (filter language v1.1).
+
+    - plain string → equality
+    - ``in:a,b,c`` → membership (empty member list → no match)
+    - ``empty:`` / ``is_empty:`` → blank after trim
+    - ``not_empty:`` → non-blank after trim
+    """
+    if predicate in ("empty:", "is_empty:"):
+        return not (raw or "").strip()
+    if predicate == "not_empty:":
+        return bool((raw or "").strip())
+    if predicate.startswith("in:"):
+        members = parse_in_members(predicate[3:])
+        if not members:
+            return False
+        return raw in members
+    return raw == predicate
+
+
 def matches_filter(row: Sequence[str], idx: Mapping[str, int], filt: Mapping[str, str]) -> bool:
+    """AND of per-field predicates (CONTRACT Filter language v1.1)."""
     if not filt:
         return False
     for k, v in filt.items():
-        if cell(row, idx, k) != v:
+        if not matches_predicate(cell(row, idx, k), v):
             return False
     return True
 

@@ -251,6 +251,96 @@ def run_l2_and_policy() -> None:
     print("PASS L2 + soft-delete + push policy", result)
 
 
+def run_filter_v11() -> None:
+    """Filter language v1.1: equality regression + in: + is_empty: + not_empty:."""
+    from remotetable.row_ops import matches_filter, matches_predicate, parse_in_members
+
+    # Pure predicate unit checks
+    assert_true(matches_predicate("x", "x"), "eq match")
+    assert_true(not matches_predicate("x", "y"), "eq miss")
+    assert_true(matches_predicate("a", "in:a,b,c"), "in hit")
+    assert_true(matches_predicate("b", "in:a,b,c"), "in hit b")
+    assert_true(not matches_predicate("z", "in:a,b,c"), "in miss")
+    assert_true(not matches_predicate("a", "in:"), "in empty members")
+    assert_true(not matches_predicate("a", "in:,,,"), "in only empties")
+    assert_true(parse_in_members(" a , b ") == ["a", "b"], "parse in members")
+    assert_true(matches_predicate("", "empty:"), "empty:")
+    assert_true(matches_predicate("  ", "is_empty:"), "is_empty: spaces")
+    assert_true(not matches_predicate("x", "is_empty:"), "is_empty: nonblank")
+    assert_true(matches_predicate("x", "not_empty:"), "not_empty:")
+    assert_true(not matches_predicate("  ", "not_empty:"), "not_empty: blank")
+
+    # Mock updateWhere / expungeWhere with richer filters
+    be = MockBackend(
+        {
+            "tabs": {
+                "F": {
+                    "headers": ["Sync ID", "Kind", "Note"],
+                    "rows": [
+                        ["1", "A", "keep"],
+                        ["2", "B", ""],
+                        ["3", "A", "  "],
+                        ["4", "C", "x"],
+                    ],
+                }
+            }
+        }
+    )
+    rt = RemoteTable(be)
+
+    # equality regression
+    u = rt.update_where("F", {"Sync ID": "1"}, {"Note": "eq"})
+    assert_true(u["updated"] == 1, str(u))
+    assert_true(rt.read_rows("F")["rows"][0][2] == "eq", "eq set")
+
+    # in: match multiple kinds
+    u2 = rt.update_where("F", {"Kind": "in:A,C"}, {"Note": "in-hit"})
+    assert_true(u2["updated"] == 3, f"in update count {u2}")  # rows 1,3,4 kinds A,A,C
+    by = {r[0]: r for r in rt.read_rows("F")["rows"]}
+    assert_true(by["1"][2] == "in-hit" and by["3"][2] == "in-hit" and by["4"][2] == "in-hit", by)
+    assert_true(by["2"][2] == "", "B not in set")
+
+    # is_empty: then expunge blank notes (row 2 still blank; row 3 was set to in-hit)
+    be3 = MockBackend(
+        {
+            "tabs": {
+                "E": {
+                    "headers": ["Sync ID", "Note"],
+                    "rows": [["a", ""], ["b", "  "], ["c", "keep"]],
+                }
+            }
+        }
+    )
+    rt3 = RemoteTable(be3)
+    r = rt3.expunge_where("E", {"Note": "is_empty:"})
+    assert_true(r["removed"] == 2, str(r))
+    left = rt3.read_rows("E")["rows"]
+    assert_true(len(left) == 1 and left[0][0] == "c", left)
+
+    # soft_delete with in:
+    be4 = MockBackend(
+        {
+            "tabs": {
+                "S": {
+                    "headers": ["Sync ID", "Deleted"],
+                    "rows": [["x", ""], ["y", ""], ["z", ""]],
+                }
+            }
+        }
+    )
+    rt4 = RemoteTable(be4)
+    sd = rt4.soft_delete_where("S", {"Sync ID": "in:x,z"}, "Deleted")
+    assert_true(sd["updated"] == 2, str(sd))
+    rows = {r[0]: r[1] for r in rt4.read_rows("S")["rows"]}
+    assert_true(rows["x"] == "true" and rows["z"] == "true" and rows["y"] == "", rows)
+
+    # AND: in: + not_empty:
+    idx = {"Sync ID": 0, "Kind": 1, "Note": 2}
+    row = ["9", "A", "n"]
+    assert_true(matches_filter(row, idx, {"Kind": "in:A,B", "Note": "not_empty:"}), "and both")
+    assert_true(not matches_filter(row, idx, {"Kind": "in:A,B", "Note": "is_empty:"}), "and fail")
+
+    print("PASS filter language v1.1 (in: / is_empty: / equality)")
 
 
 def run_type_coerce() -> None:
@@ -509,6 +599,7 @@ def main() -> int:
     run_header_three_cases()
     run_rate_limit_helpers()
     run_l2_and_policy()
+    run_filter_v11()
     run_type_coerce()
     run_merge_suite()
     run_offline_file_backends()

@@ -242,7 +242,7 @@ class GoogleSheetsBackend(
 
     /**
      * Expunge: delete matching **data** rows via deleteDimension (key absent).
-     * Filter is AND equality on header names.
+     * Filter language v1.1 (equality / in: / is_empty:) on header names.
      */
     override fun expungeWhere(tab: String, filter: Map<String, String>): Int {
         if (filter.isEmpty()) return 0

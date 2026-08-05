@@ -14,7 +14,7 @@ This document is the shared product contract. Implementation languages (Kotlin A
 |-------|------|----------------|
 | **L0** | Transport | Per-backend HTTP/SQL/file I/O; **baked-in rate limit** (config expected rates + 429/retry); efficient provider ops |
 | **L1** | Grid / table | Tabs ≈ tables; headers; rows as **named** columns; create-time **column order**; types coerce |
-| **L2** | Row ops | Filter (AND equality) → set fields; soft-delete flag; **expunge**; **readMany / writeMany** |
+| **L2** | Row ops | Filter (AND; equality + `in:` / `is_empty:`) → set fields; soft-delete flag; **expunge**; **readMany / writeMany** |
 | **L3** | Policy / sync | Directional push/pull; keys + timestamp; column_map; **A↔B merge** (`union` / `lww_row` / `field_fill`) |
 | **L4** | App / CLI | Which endpoints, product-only steps, UI, scheduling |
 
@@ -80,9 +80,22 @@ Wire/logical types: `string` | `number` | `timestamp` | `checkbox` (boolean).
 
 ---
 
-## Filter language (v1)
+## Filter language (v1.1)
 
-AND of field **equalities** only. `IN` / `is_empty` later.
+AND of per-field predicates over a `Map` / object of **column name → value string**.
+Backward compatible with v1 equality-only maps.
+
+| Value | Meaning |
+|-------|---------|
+| `"foo"` | Equality (exact cell match; unchanged from v1) |
+| `"in:a,b,c"` | Field ∈ {a, b, c} after splitting on commas, trimming members, dropping empties |
+| `"in:"` (no members) | Matches **nothing** |
+| `"empty:"` or `"is_empty:"` | Cell is blank after trim |
+| `"not_empty:"` | Cell is non-blank after trim |
+
+**Limitations (v1.1):** no OR groups; no freeform expressions; commas inside `in:` members are **not** escaped (use equality or client-side loops if needed). Values that literally equal a reserved prefix form are interpreted as that form, not equality.
+
+Used by `updateWhere`, `softDeleteWhere`, `expungeWhere` (Kotlin + Python mock/default paths).
 
 ---
 
@@ -95,7 +108,7 @@ AND of field **equalities** only. `IN` / `is_empty` later.
 | `readMany(tabs[])` | Bulk read multiple tables; Sheets uses `values.batchGet` (chunked) |
 | `writeMany` | Multi-tab replace/append without one full rewrite loop per unrelated row |
 | `updateRange` / point update | Contiguous range write without full-tab replace |
-| `updateWhere(filter, set)` | AND-equality filter → set named fields |
+| `updateWhere(filter, set)` | Filter language v1.1 → set named fields |
 | `softDeleteWhere` | Flag-only tombstone on matching rows |
 | `expungeWhere` | Remove rows so keys are absent |
 
