@@ -81,3 +81,10 @@ Append-only activity log for this subproject.
 - policysync_scenarios.py S1–S7 offline PASS; S8 EtherCalc PASS with up.sh
 - Harness wires pure suite always
 
+
+## 2026-08-05 - local PR-fix-syncing prepared (STAGE 1 remotetable)
+
+- History: rebased onto origin/master a2657dc; 16→11 logical commits (eng-log fixups); backup-fix-syncing @ ad97c08; cleaned HEAD 8f7b67b; TREE_MATCHES_BACKUP YES
+- PR: /home/dlang/git/remotetable/sandbox/PRs/PR-fix-syncing.md
+- Two-stage: merge this library PR first; then VE pin to merged master tip (Stage 2)
+- Pre-rebase tip (old VE pin) 188b328 kept as backup-fix-syncing-pre-rebase
