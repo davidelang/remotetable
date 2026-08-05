@@ -23,7 +23,7 @@ Cold-start orientation. Prune; no plan/branch status novels.
 - `./setup_agent.sh` / `./remove_worktree.sh` — feature worktrees
 - `./get-builds-tag.sh` — builds tag preflight for baseball reset
 - `./run-grok-*` — role launchers
-- Project **verify** entrypoint: document here when implemented (language-specific)
+- Project **verify** entrypoint: `python3 conformance/harness.py` (offline mock + PolicySync S1–S7; EtherCalc/live opt-in via env)
 
 ## Lifecycle tags
 

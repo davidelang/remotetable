@@ -12,8 +12,8 @@ Backlog only. Phase 1 (library for VehicleExpenses cutover of first three backen
 
 - [ ] CLI tools (`remotetable` / Python) as first-class product
 - [ ] Format conversion A→B (files and remotes), including Google Sheets ↔ EtherCalc as conversion demo
-- [ ] A↔B merge: row id key + per-row timestamp
-- [ ] A↔B sync rules / collision tooling
+- [x] A↔B merge: row id key + per-row timestamp
+- [x] A↔B sync rules / collision tooling
 - [ ] Port remaining VehicleExpenses backends (Baserow, NocoDB, PocketBase, Supabase, Airtable, Firebase, Zoho, CSV-zip parity, stubs cleanup)
 - [ ] Packaging: tgz → deb → rpm → OpenWrt → LuCI → Ubuntu PPA (after library stable)
 - [ ] OAuth device flow and service-account auth (after token-file JSON)

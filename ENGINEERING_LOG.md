@@ -88,3 +88,13 @@ Append-only activity log for this subproject.
 - PR: /home/dlang/git/remotetable/sandbox/PRs/PR-fix-syncing.md
 - Two-stage: merge this library PR first; then VE pin to merged master tip (Stage 2)
 - Pre-rebase tip (old VE pin) 188b328 kept as backup-fix-syncing-pre-rebase
+
+## 2026-08-05 - merge: fix-syncing into master (Stage 1)
+
+- PR: sandbox/PRs/PR-fix-syncing.md
+- Source tip: e11b0aa (11 product + eng-log prep); base a2657dc
+- Path: FF index-first via merge-branch-into-master.sh; special-file protocol
+- Delivered: CONTRACT schema_v1, L0–L3, offline backends, filter v1.1, EtherCalc harness, PolicySync S1–S8
+- Verify: python3 conformance/harness.py PASS offline; rowdb unit + cli_flag_order PASS
+- TODO: closed A↔B merge + A↔B sync rules backlog items; project-facts verify entrypoint set
+- Next (Stage 2 VE): pin third_party/remotetable + rebuild AAR to this master tip after commit
