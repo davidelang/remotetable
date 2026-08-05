@@ -609,6 +609,18 @@ def run_room_export_ethercalc_smoke() -> None:
         raise SystemExit(r.returncode)
 
 
+def run_room_fuel_export_smoke() -> None:
+    """Room Fuel multi-tab golden → json-book (always); EtherCalc one-tab if env set."""
+    import subprocess
+    smoke = ROOT / "conformance" / "room_fuel_export_smoke.py"
+    if not smoke.is_file():
+        print("SKIP room-fuel export smoke (module missing)")
+        return
+    r = subprocess.run([sys.executable, str(smoke)], cwd=str(ROOT))
+    if r.returncode != 0:
+        raise SystemExit(r.returncode)
+
+
 def main() -> int:
     run_mock()
     run_header_three_cases()
@@ -619,6 +631,7 @@ def main() -> int:
     run_merge_suite()
     run_offline_file_backends()
     run_room_export_ethercalc_smoke()
+    run_room_fuel_export_smoke()
     run_live_optional()
     run_ethercalc_local_optional()
     print("backends_required:", ", ".join(BackendIds.LIVE))

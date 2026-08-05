@@ -64,3 +64,9 @@ Append-only activity log for this subproject.
 - Offline json-book PASS; EtherCalc e2e PASS with up.sh
 - Harness wires offline half always; EtherCalc SKIP without env
 
+
+## 2026-08-05 - room-fuel multi-tab pilot smoke CODE LANDED
+
+- room_fuel_export_smoke.py + fixtures/room_fuel_export.json
+- Offline multi-tab PASS; EtherCalc one-tab PASS with up.sh
+

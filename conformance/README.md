@@ -115,3 +115,18 @@ ROOM_EXPORT_JSONBOOK=/path/to/vehicles.json \
 ```
 
 VE producer: `app/.../RoomVehiclesBackend.exportJsonBook`. Production Sheets path untouched.
+
+## Room Fuel multi-tab → json-book → EtherCalc (pilot)
+
+| Step | Source | Offline? |
+|------|--------|----------|
+| Golden multi-tab fuel | `fixtures/room_fuel_export.json` (= VE `RoomFuelBackend.exportJsonBook`) | Always |
+| json-book round-trip | ≥2 `Fuel - *` tabs, Sync ID + Notes | Always |
+| One-tab EtherCalc push | first fuel tab | Opt-in |
+
+```bash
+python3 conformance/room_fuel_export_smoke.py
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/room_fuel_export_smoke.py
+```
+
+VE: `app/.../RoomFuelBackend.kt` (read-only default; not registered as Sheets dest).
