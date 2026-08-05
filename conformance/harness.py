@@ -610,11 +610,23 @@ def run_room_export_ethercalc_smoke() -> None:
 
 
 def run_room_fuel_export_smoke() -> None:
-    """Room Fuel multi-tab golden → json-book (always); EtherCalc one-tab if env set."""
+    """Room Fuel multi-tab golden → json-book (always); EtherCalc multi-room if env set."""
     import subprocess
     smoke = ROOT / "conformance" / "room_fuel_export_smoke.py"
     if not smoke.is_file():
         print("SKIP room-fuel export smoke (module missing)")
+        return
+    r = subprocess.run([sys.executable, str(smoke)], cwd=str(ROOT))
+    if r.returncode != 0:
+        raise SystemExit(r.returncode)
+
+
+def run_policysync_scenarios() -> None:
+    """PolicySync lww_row scenarios S1–S7 offline; S8 EtherCalc if env set."""
+    import subprocess
+    smoke = ROOT / "conformance" / "policysync_scenarios.py"
+    if not smoke.is_file():
+        print("SKIP PolicySync scenarios (module missing)")
         return
     r = subprocess.run([sys.executable, str(smoke)], cwd=str(ROOT))
     if r.returncode != 0:
@@ -630,6 +642,7 @@ def main() -> int:
     run_type_coerce()
     run_merge_suite()
     run_offline_file_backends()
+    run_policysync_scenarios()
     run_room_export_ethercalc_smoke()
     run_room_fuel_export_smoke()
     run_live_optional()

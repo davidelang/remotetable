@@ -88,6 +88,29 @@ conformance/ethercalc/down.sh
 Default offline `python3 conformance/harness.py` does **not** require docker (smoke SKIP).
 See `conformance/ethercalc/README.md`.
 
+## PolicySync / MergeSync scenario suite (default-on soak evidence)
+
+Agent-runnable LWW scenarios (does **not** flip VE PolicySync defaults):
+
+| Suite | When | Scenarios |
+|-------|------|-----------|
+| Pure offline | Always (harness) | S1–S5 per entity (acks/expenses/vehicles/fuel), S6 vehicle overlay, S7 multi-tab fuel |
+| EtherCalc remote | `REMOTETABLE_ETHERCALC_LOCAL=1` | S8 HTTP remote grid merge; multi-tab fuel rooms |
+
+```bash
+# offline always
+python3 conformance/policysync_scenarios.py
+# or full harness
+python3 conformance/harness.py
+
+# with local EtherCalc
+conformance/ethercalc/up.sh
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/policysync_scenarios.py
+conformance/ethercalc/down.sh
+```
+
+VE soak doc: `docs/reference/POLICY_SYNC_PILOT_SOAK.md` (points here for automated evidence).
+
 ## Room Vehicles → json-book → EtherCalc (e2e pilot)
 
 Validates the multi-backend story **without Google Sheets**:

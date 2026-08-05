@@ -75,3 +75,9 @@ Append-only activity log for this subproject.
 
 - room_fuel_export_smoke: each fuel tab → unique EC room; offline PASS; e2e PASS with up.sh
 
+
+## 2026-08-05 - PolicySync scenario suite CODE LANDED
+
+- policysync_scenarios.py S1–S7 offline PASS; S8 EtherCalc PASS with up.sh
+- Harness wires pure suite always
+
