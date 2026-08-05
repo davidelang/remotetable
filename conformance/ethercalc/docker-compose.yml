@@ -1,0 +1,16 @@
+# Local EtherCalc for remotetable validation (no secrets).
+# One room ≈ one CSV grid (single logical tab for smoke).
+#
+# Usage (from third_party/remotetable/src):
+#   conformance/ethercalc/up.sh
+#   conformance/ethercalc/down.sh
+#
+# Default: http://127.0.0.1:8000  room: ve-smoke
+services:
+  ethercalc:
+    image: audreyt/ethercalc:latest
+    container_name: remotetable-ethercalc-smoke
+    ports:
+      - "8000:8000"
+    # EtherCalc listens on 8000 inside the image
+    restart: "no"

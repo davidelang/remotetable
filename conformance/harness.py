@@ -490,6 +490,20 @@ def run_header_three_cases() -> None:
     print("PASS header three cases (mock ensureHeaders)")
 
 
+
+
+def run_ethercalc_local_optional() -> None:
+    """Opt-in local EtherCalc smoke (REMOTETABLE_ETHERCALC_LOCAL=1)."""
+    import subprocess
+    smoke = ROOT / "conformance" / "ethercalc_live_smoke.py"
+    if not smoke.is_file():
+        print("SKIP ethercalc local smoke (module missing)")
+        return
+    r = subprocess.run([sys.executable, str(smoke)], cwd=str(ROOT))
+    if r.returncode != 0:
+        raise SystemExit(r.returncode)
+
+
 def main() -> int:
     run_mock()
     run_header_three_cases()
@@ -499,6 +513,7 @@ def main() -> int:
     run_merge_suite()
     run_offline_file_backends()
     run_live_optional()
+    run_ethercalc_local_optional()
     print("backends_required:", ", ".join(BackendIds.LIVE))
     print("backends_offline:", ", ".join(BackendIds.OFFLINE))
     return 0

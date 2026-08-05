@@ -1,0 +1,47 @@
+# Local EtherCalc (remotetable validation)
+
+**Mapping:** one **room** ≈ one CSV grid ≈ one logical tab (smoke only; multi-room VE layout is later).
+
+| Setting | Default |
+|---------|---------|
+| Image | `audreyt/ethercalc:latest` |
+| URL | `http://127.0.0.1:8000` |
+| Smoke room | `ve-smoke` |
+
+## Start / stop
+
+From `third_party/remotetable/src` (or library clone root):
+
+```bash
+conformance/ethercalc/up.sh
+conformance/ethercalc/down.sh
+```
+
+Health: `curl -s "http://127.0.0.1:8000/ve-smoke.csv"` (empty CSV OK).
+
+## Smoke tests
+
+```bash
+# with server up
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/ethercalc_live_smoke.py
+
+# or via main harness (also runs offline first)
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/harness.py
+```
+
+Without docker / server down: smoke **SKIP**s; offline harness still **PASS**.
+
+Optional overrides:
+
+```bash
+export REMOTETABLE_ETHERCALC_BASE_URL=http://127.0.0.1:8000
+export REMOTETABLE_ETHERCALC_ROOM=ve-smoke
+```
+
+No secrets required.
+
+## Semantics note
+
+`audreyt/ethercalc` accepts CSV via `POST /_/{room}` which **appends** a paste block.
+Smoke tests use a **unique room name per run**. Application `write_rows(..., mode=replace)`
+best-effort clears then POSTs; do not rely on perfect wipe across all EtherCalc versions.

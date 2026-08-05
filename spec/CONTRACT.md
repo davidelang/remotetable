@@ -334,6 +334,8 @@ scripts/remotetable conformance
 # mock directional push:
 scripts/remotetable push --config path/to/push-config.json
 scripts/remotetable merge --config path/to/merge-config.json
+
+**Local EtherCalc validation:** `conformance/ethercalc/up.sh` then `REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/ethercalc_live_smoke.py` (one room ≈ one tab; no secrets). Offline harness unchanged without docker.
 ```
 
 Optional live smoke: `scripts/remotetable sheets-smoke --token-file …` (or `REMOTETABLE_TOKEN_FILE`).

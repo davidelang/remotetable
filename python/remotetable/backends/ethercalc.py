@@ -48,28 +48,55 @@ class EtherCalcBackend(Backend):
         with urllib.request.urlopen(req, timeout=60) as resp:
             return resp.read().decode("utf-8", errors="replace")
 
-    def _put_csv(self, text: str) -> None:
-        # EtherCalc: POST /_/{room} with CSV body appends; PUT replaces in some deployments
+    def _clear_room_cells(self) -> None:
+        """Best-effort wipe so replace is not stacked-append (audreyt/ethercalc POST pastes)."""
+        # SocialCalc command via POST /_/{room} JSON
+        try:
+            body = json.dumps(["set A1:ZZ999 empty"]).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self.base_url}/_/{self.room}",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                resp.read()
+        except Exception:
+            pass
+        try:
+            req = urllib.request.Request(self._url(), method="DELETE")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                resp.read()
+        except Exception:
+            pass
+
+    def _put_csv(self, text: str, *, replace: bool = False) -> None:
+        # EtherCalc (common image): POST /_/{room} with text/csv *appends* a paste block.
+        # For replace: clear cells first, then POST full CSV grid once.
+        if replace:
+            self._clear_room_cells()
         data = text.encode("utf-8")
+        # Prefer POST /_/{room} (works on audreyt/ethercalc); PUT often 404
+        req2 = urllib.request.Request(
+            f"{self.base_url}/_/{self.room}",
+            data=data,
+            headers=self._headers(),
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req2, timeout=60) as resp:
+                resp.read()
+            return
+        except urllib.error.HTTPError:
+            pass
         req = urllib.request.Request(
             self._url(),
             data=data,
             headers=self._headers(),
             method="PUT",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                resp.read()
-        except urllib.error.HTTPError:
-            # fallback append POST
-            req2 = urllib.request.Request(
-                f"{self.base_url}/_/{self.room}",
-                data=data,
-                headers=self._headers(),
-                method="POST",
-            )
-            with urllib.request.urlopen(req2, timeout=60) as resp:
-                resp.read()
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            resp.read()
 
     def test_connection(self) -> dict[str, Any]:
         if not self.base_url:
@@ -128,7 +155,7 @@ class EtherCalcBackend(Backend):
             w.writerow(headers)
             for r in rows:
                 w.writerow(r)
-            self._put_csv(buf.getvalue())
+            self._put_csv(buf.getvalue(), replace=True)
             return {"written": len(rows)}
         existing = self.read_rows(tab)
         all_rows = existing["rows"] + [list(r) for r in rows]
@@ -138,5 +165,6 @@ class EtherCalcBackend(Backend):
         w.writerow(hdr)
         for r in all_rows:
             w.writerow(r)
-        self._put_csv(buf.getvalue())
+        # Full rewrite of combined grid (append semantics without stacking CSV posts)
+        self._put_csv(buf.getvalue(), replace=True)
         return {"written": len(rows)}

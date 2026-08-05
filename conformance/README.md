@@ -73,3 +73,17 @@ python3 conformance/harness.py
 scripts/remotetable test-connection --backend ethercalc \
   --base-url https://ethercalc.example --room mysheet
 ```
+
+## Local EtherCalc validation (opt-in)
+
+One **room** ≈ one CSV tab (smoke). Spin-up:
+
+```bash
+# from third_party/remotetable/src
+conformance/ethercalc/up.sh     # docker: audreyt/ethercalc → http://127.0.0.1:8000
+REMOTETABLE_ETHERCALC_LOCAL=1 python3 conformance/ethercalc_live_smoke.py
+conformance/ethercalc/down.sh
+```
+
+Default offline `python3 conformance/harness.py` does **not** require docker (smoke SKIP).
+See `conformance/ethercalc/README.md`.
