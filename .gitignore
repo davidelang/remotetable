@@ -13,3 +13,4 @@ third_party/*/*.local
 
 # refresh-shell: setuid helper binary (built; not in git). Source: refresh-shell.c
 refresh-shell
+sandbox/
