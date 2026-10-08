@@ -7,7 +7,7 @@ Cold-start orientation. Prune; no plan/branch status novels.
 - Orchestration: `~/git/remotetable/` (branch `orchestration`)
 - Product: `~/git/remotetable/master/` (branch `master`)
 - Features: `~/git/remotetable/agent-N/`
-- **Sandbox (absolute):** `~/git/remotetable/sandbox/` — plans, research, failure logs, PRs (use this when cwd is master/agent-N)
+- **Sandbox (absolute):** `@@ORCH_ROOT@@/@@SANDBOX_PATH@@/` — plans, research, failure logs, PRs (use this when cwd is master/agent-N)
 
 ## GitHub
 

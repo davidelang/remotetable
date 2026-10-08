@@ -3,5 +3,5 @@
 - **Agent ID:** orchestration
 - **Current Branch:** orchestration
 - **Role:** Orchestrator
-- **Sandbox:** /home/dlang/git/remotetable/sandbox/
+- **Sandbox:** @@ORCH_ROOT@@/@@SANDBOX_PATH@@/
 - **Status:** ACTIVE
