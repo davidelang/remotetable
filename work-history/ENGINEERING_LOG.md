@@ -98,3 +98,10 @@ Append-only activity log for this subproject.
 - Verify: python3 conformance/harness.py PASS offline; rowdb unit + cli_flag_order PASS
 - TODO: closed A↔B merge + A↔B sync rules backlog items; project-facts verify entrypoint set
 - Next (Stage 2 VE): pin third_party/remotetable + rebuild AAR to this master tip after commit
+
+## 2026-11-12 - libpin kit 2026.10.24
+
+- Synced the libpin kit (fetch-deps, get-artifacts, VERSION, libpin-sandbox, libpin-bwrap, libpin-landlock) from orchestration-example@830b09e (libpin@1a98c91, LIBPIN_VERSION 2026.10.24).
+- .gitignore un-ignores third_party/VERSION (and the other kit tools where they were still ignored).
+- Pin tomls updated as needed for the new kit (example: source_kind=seed-src, default=false, sha256; heavy pins rclone/paddle/paddle-opt/opencv: default=false).
+
